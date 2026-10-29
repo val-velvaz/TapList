@@ -19,6 +19,7 @@ const esquemaEnv = z.object({
   JWT_EXPIRACION_HORAS: z.coerce.number().positive().default(8),
 
   LOGIN_MAX_INTENTOS: z.coerce.number().int().positive().default(5),
+  LOGIN_MAX_INTENTOS_IP: z.coerce.number().int().positive().default(20),
   LOGIN_VENTANA_MINUTOS: z.coerce.number().positive().default(15),
 });
 
