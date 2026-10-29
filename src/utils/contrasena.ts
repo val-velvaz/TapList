@@ -25,10 +25,10 @@ export async function verificarContrasena(hash: string, contrasena: string): Pro
 // Hash de una contraseña aleatoria que nadie conoce. Se verifica contra él
 // cuando el correo no existe, para que esa respuesta tarde lo mismo que una
 // contraseña incorrecta y no revele qué correos están registrados.
-let hashFicticio: Promise<string> | undefined;
+// Se calcula al cargar el módulo para que ni el primer intento tarde distinto.
+const hashFicticio = hashearContrasena(randomBytes(32).toString('hex'));
 
 export async function verificarContraHashFicticio(contrasena: string): Promise<false> {
-  hashFicticio ??= hashearContrasena(randomBytes(32).toString('hex'));
   await verificarContrasena(await hashFicticio, contrasena);
   return false;
 }
