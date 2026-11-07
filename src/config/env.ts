@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { esZonaHorariaValida } from '../modules/lecturas/tiempo.js';
 
 // Valida las variables de entorno una sola vez al arrancar. Si falta algo,
 // el proceso termina con un mensaje claro en lugar de fallar más tarde.
@@ -21,6 +22,19 @@ const esquemaEnv = z.object({
   LOGIN_MAX_INTENTOS: z.coerce.number().int().positive().default(5),
   LOGIN_MAX_INTENTOS_IP: z.coerce.number().int().positive().default(20),
   LOGIN_VENTANA_MINUTOS: z.coerce.number().positive().default(15),
+
+  // Registro de asistencia por NFC
+  ZONA_HORARIA_ESCUELA: z
+    .string()
+    .default('America/Mexico_City')
+    .refine(esZonaHorariaValida, 'debe ser una zona horaria IANA válida, p. ej. America/Mexico_City'),
+  MINUTOS_ANTES_CLASE: z.coerce.number().int().nonnegative().default(15),
+  MINUTOS_MAX_REGISTRO: z.coerce.number().int().nonnegative().default(60),
+  HORAS_MAX_LECTURA_OFFLINE: z.coerce.number().positive().default(24),
+
+  // Límites de los dispositivos
+  DISPOSITIVO_MAX_SOLICITUDES_MINUTO: z.coerce.number().int().positive().default(60),
+  DISPOSITIVO_MAX_FALLOS_IP: z.coerce.number().int().positive().default(30),
 });
 
 const resultado = esquemaEnv.safeParse(process.env);
