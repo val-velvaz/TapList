@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import { pool } from '../../db/pool.js';
+import { emitirSeguro } from '../../eventos/eventos.js';
 import { HttpError } from '../../utils/HttpError.js';
 import { enmascararUid } from '../../utils/uid.js';
 import {
@@ -113,8 +114,19 @@ export async function procesarLectura(
     [credencial.id_estudiante, enCurso.clase.idClase, entrada.idDispositivo, enCurso.fecha, momento.hora, estado],
   );
 
-  if (insercion.rowCount === 1) {
+  const registro = insercion.rows[0];
+  if (registro) {
     console.info(`[lecturas] ${estado.toUpperCase()} clase=${enCurso.clase.idClase} fecha=${enCurso.fecha} ${contexto}`);
+    // Paso 12: solo los registros nuevos generan evento; un duplicado no.
+    emitirSeguro('asistencia:registrada', {
+      idAsistencia: registro.id_asistencia,
+      idEstudiante: credencial.id_estudiante,
+      idClase: enCurso.clase.idClase,
+      idDispositivo: entrada.idDispositivo,
+      fecha: enCurso.fecha,
+      hora: momento.hora,
+      estado,
+    });
     return { resultado: ESTADO_A_RESULTADO[estado], duplicado: false };
   }
 
