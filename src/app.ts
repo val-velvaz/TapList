@@ -6,6 +6,7 @@ import { manejoErrores, rutaNoEncontrada } from './middleware/manejoErrores.js';
 import { requiereRol } from './middleware/requiereRol.js';
 import { requiereSesion } from './middleware/requiereSesion.js';
 import { rutasAuth } from './modules/auth/auth.routes.js';
+import { rutasLecturas } from './modules/lecturas/lecturas.routes.js';
 
 export function crearApp(): Express {
   const app = express();
@@ -16,6 +17,7 @@ export function crearApp(): Express {
   app.use(cookieParser());
 
   app.use('/api/auth', rutasAuth);
+  app.use('/api/dispositivo/lecturas', rutasLecturas);
   // Aquí se montarán los módulos siguientes, p. ej.:
   //   app.use('/api/estudiantes', rutasEstudiantes);
   //   app.use('/api/asistencias', rutasAsistencias);
