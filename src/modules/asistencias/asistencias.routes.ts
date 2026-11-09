@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requiereRol } from '../../middleware/requiereRol.js';
 import { requiereSesion } from '../../middleware/requiereSesion.js';
 import { filtros, listar } from './asistencias.controller.js';
+import { flujoEventos } from './asistencias.tiempoReal.js';
 
 export const rutasAsistencias = Router();
 
@@ -13,3 +14,4 @@ rutasAsistencias.use(requiereSesion, requiereRol('Docente'), (_req, res, next) =
 
 rutasAsistencias.get('/', listar);
 rutasAsistencias.get('/filtros', filtros);
+rutasAsistencias.get('/eventos', flujoEventos);
