@@ -11,6 +11,8 @@ export default defineConfig({
       JWT_SECRET: randomBytes(48).toString('base64'),
       // Latido corto para probar en segundos que el SSE se cierra al terminar la sesión.
       SSE_LATIDO_SEGUNDOS: '0.5',
+      // Límite bajo para probar el 422 de la exportación con pocos datos.
+      EXPORTACION_MAX_FILAS: '12',
     },
     // Las pruebas comparten la base y los limitadores en memoria.
     fileParallelism: false,
