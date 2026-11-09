@@ -76,7 +76,10 @@ function aAsistenciaPublica(f: FilaAsistencia): AsistenciaPublica {
  * Un filtro que apunta a algo que el docente no imparte responde 404, igual
  * que si no existiera, para no revelar que existe (en lugar de 403).
  */
-async function verificarFiltrosPropios(idDocente: number, filtros: FiltrosAsistencias): Promise<void> {
+export async function verificarFiltrosPropios(
+  idDocente: number,
+  filtros: Pick<FiltrosAsistencias, 'id_clase' | 'id_grupo' | 'id_estudiante'>,
+): Promise<void> {
   const verificar = async (sql: string, id: number, mensaje: string) => {
     const { rowCount } = await pool.query(sql, [id, idDocente]);
     if (!rowCount) throw new HttpError(404, mensaje);
