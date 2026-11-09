@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requiereRol } from '../../middleware/requiereRol.js';
 import { requiereSesion } from '../../middleware/requiereSesion.js';
-import { alta, detalle, listar } from './estudiantes.controller.js';
+import { alta, detalle, listar, reemplazar, vincular } from './estudiantes.controller.js';
 
 export const rutasEstudiantes = Router();
 
@@ -15,3 +15,5 @@ rutasEstudiantes.use(requiereSesion, requiereRol('Administrador'), (_req, res, n
 rutasEstudiantes.get('/', listar);
 rutasEstudiantes.get('/:id', detalle);
 rutasEstudiantes.post('/', alta);
+rutasEstudiantes.post('/:id/credencial', vincular);
+rutasEstudiantes.put('/:id/credencial', reemplazar);

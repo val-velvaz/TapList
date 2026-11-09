@@ -68,3 +68,6 @@ export const esquemaIdEstudiante = z.coerce
   .int('El id del estudiante debe ser un entero')
   .positive('El id del estudiante debe ser positivo')
   .max(2_147_483_647, 'El id del estudiante es demasiado grande');
+
+/** POST y PUT /api/estudiantes/:id/credencial. El UID nunca regresa en la respuesta. */
+export const esquemaCredencial = z.object({ uid: esquemaUid });

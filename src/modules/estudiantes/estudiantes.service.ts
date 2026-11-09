@@ -239,3 +239,76 @@ export async function darDeAlta(datos: DatosAlta, idUsuario: number): Promise<Es
     return (await obtenerEstudiante(idEstudiante, cliente))!;
   });
 }
+
+export const MENSAJE_ESTUDIANTE_DE_BAJA = 'El estudiante está dado de baja';
+
+/**
+ * Bloquea la fila del estudiante hasta el final de la transacción, para que
+ * dos operaciones sobre el mismo estudiante (p. ej. una baja y una
+ * vinculación simultáneas) se ejecuten una después de otra.
+ * Lanza 404 si no existe; devuelve si está activo.
+ */
+async function bloquearEstudiante(cliente: PoolClient, idEstudiante: number): Promise<{ activo: boolean }> {
+  const { rows } = await cliente.query<{ activo: boolean }>(
+    'SELECT activo FROM estudiante WHERE id_estudiante = $1 FOR UPDATE',
+    [idEstudiante],
+  );
+  if (!rows[0]) throw new HttpError(404, 'El estudiante no existe');
+  return rows[0];
+}
+
+/** AD-06: vincula una credencial a un estudiante activo que no tiene una activa. */
+export async function vincularCredencial(
+  idEstudiante: number,
+  uid: string,
+  idUsuario: number,
+): Promise<EstudiantePublico> {
+  return conTransaccion(async (cliente) => {
+    const { activo } = await bloquearEstudiante(cliente, idEstudiante);
+    if (!activo) throw new HttpError(409, MENSAJE_ESTUDIANTE_DE_BAJA);
+
+    const idCredencial = await insertarCredencial(cliente, idEstudiante, uid);
+    await registrarEnBitacora(
+      cliente,
+      idUsuario,
+      'VINCULAR_CREDENCIAL',
+      `credencial_nfc#${idCredencial} → estudiante#${idEstudiante}`,
+    );
+    return (await obtenerEstudiante(idEstudiante, cliente))!;
+  });
+}
+
+/**
+ * Reemplaza la credencial activa (perdida o dañada) por una nueva. La anterior
+ * no se borra ni se sobrescribe: queda con activa = false en el historial y su
+ * UID ya no puede volver a vincularse a nadie, ni siquiera al mismo estudiante.
+ */
+export async function reemplazarCredencial(
+  idEstudiante: number,
+  uid: string,
+  idUsuario: number,
+): Promise<EstudiantePublico> {
+  return conTransaccion(async (cliente) => {
+    const { activo } = await bloquearEstudiante(cliente, idEstudiante);
+    if (!activo) throw new HttpError(409, MENSAJE_ESTUDIANTE_DE_BAJA);
+
+    const { rows } = await cliente.query<{ id_credencial: number }>(
+      `UPDATE credencial_nfc SET activa = false
+        WHERE id_estudiante = $1 AND activa
+        RETURNING id_credencial`,
+      [idEstudiante],
+    );
+    const anterior = rows[0];
+    if (!anterior) throw new HttpError(409, 'El estudiante no tiene una credencial activa; usa vincular');
+
+    // Primero se desactiva la anterior: el índice único parcial solo permite una activa.
+    const nueva = await insertarCredencial(cliente, idEstudiante, uid);
+    await registrarEnBitacora(
+      cliente,
+      idUsuario,
+      'REEMPLAZAR_CREDENCIAL',
+      `credencial_nfc#${anterior.id_credencial} → credencial_nfc#${nueva} (estudiante#${idEstudiante})`,
+    );
+    return (await obtenerEstudiante(idEstudiante, cliente))!;
+  });
+}

@@ -1,8 +1,15 @@
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
 import { HttpError } from '../../utils/HttpError.js';
-import { esquemaAlta, esquemaConsulta, esquemaIdEstudiante } from './estudiantes.schemas.js';
-import { darDeAlta, historialCredenciales, listarEstudiantes, obtenerEstudiante } from './estudiantes.service.js';
+import { esquemaAlta, esquemaConsulta, esquemaCredencial, esquemaIdEstudiante } from './estudiantes.schemas.js';
+import {
+  darDeAlta,
+  historialCredenciales,
+  listarEstudiantes,
+  obtenerEstudiante,
+  reemplazarCredencial,
+  vincularCredencial,
+} from './estudiantes.service.js';
 
 /** Valida con zod y lanza 400 con un mensaje por campo (el primero que falló). */
 export function validar<T extends z.ZodType>(esquema: T, datos: unknown, mensaje: string): z.infer<T> {
@@ -41,4 +48,18 @@ export async function alta(req: Request, res: Response): Promise<void> {
   const datos = validar(esquemaAlta, req.body ?? {}, 'Datos del estudiante inválidos');
   const estudiante = await darDeAlta(datos, req.usuario!.id);
   res.status(201).location(`/api/estudiantes/${estudiante.id}`).json({ estudiante });
+}
+
+/** POST /api/estudiantes/:id/credencial (AD-06): vincula una credencial. */
+export async function vincular(req: Request, res: Response): Promise<void> {
+  const id = idDeRuta(req);
+  const { uid } = validar(esquemaCredencial, req.body ?? {}, 'Credencial inválida');
+  res.status(201).json({ estudiante: await vincularCredencial(id, uid, req.usuario!.id) });
+}
+
+/** PUT /api/estudiantes/:id/credencial (AD-06): reemplaza la credencial activa. */
+export async function reemplazar(req: Request, res: Response): Promise<void> {
+  const id = idDeRuta(req);
+  const { uid } = validar(esquemaCredencial, req.body ?? {}, 'Credencial inválida');
+  res.json({ estudiante: await reemplazarCredencial(id, uid, req.usuario!.id) });
 }
