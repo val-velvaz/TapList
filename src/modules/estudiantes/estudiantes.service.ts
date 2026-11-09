@@ -312,3 +312,34 @@ export async function reemplazarCredencial(
     return (await obtenerEstudiante(idEstudiante, cliente))!;
   });
 }
+
+/**
+ * AD-07: baja lógica. En una sola transacción desactiva al estudiante y su
+ * credencial activa (si tiene) y escribe en la bitácora. No borra nada: las
+ * asistencias anteriores se conservan, y una lectura posterior de esa
+ * credencial sale RECHAZADA (RF-04).
+ */
+export async function darDeBaja(idEstudiante: number, idUsuario: number): Promise<EstudiantePublico> {
+  return conTransaccion(async (cliente) => {
+    const { activo } = await bloquearEstudiante(cliente, idEstudiante);
+    if (!activo) throw new HttpError(409, 'El estudiante ya está dado de baja');
+
+    await cliente.query('UPDATE estudiante SET activo = false WHERE id_estudiante = $1', [idEstudiante]);
+    const { rows } = await cliente.query<{ id_credencial: number }>(
+      `UPDATE credencial_nfc SET activa = false
+        WHERE id_estudiante = $1 AND activa
+        RETURNING id_credencial`,
+      [idEstudiante],
+    );
+    const credencial = rows[0];
+    await registrarEnBitacora(
+      cliente,
+      idUsuario,
+      'BAJA_ESTUDIANTE',
+      credencial
+        ? `estudiante#${idEstudiante} (credencial_nfc#${credencial.id_credencial} desactivada)`
+        : `estudiante#${idEstudiante}`,
+    );
+    return (await obtenerEstudiante(idEstudiante, cliente))!;
+  });
+}

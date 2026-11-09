@@ -4,6 +4,7 @@ import { HttpError } from '../../utils/HttpError.js';
 import { esquemaAlta, esquemaConsulta, esquemaCredencial, esquemaIdEstudiante } from './estudiantes.schemas.js';
 import {
   darDeAlta,
+  darDeBaja,
   historialCredenciales,
   listarEstudiantes,
   obtenerEstudiante,
@@ -62,4 +63,9 @@ export async function reemplazar(req: Request, res: Response): Promise<void> {
   const id = idDeRuta(req);
   const { uid } = validar(esquemaCredencial, req.body ?? {}, 'Credencial inválida');
   res.json({ estudiante: await reemplazarCredencial(id, uid, req.usuario!.id) });
+}
+
+/** POST /api/estudiantes/:id/baja (AD-07): baja lógica. */
+export async function baja(req: Request, res: Response): Promise<void> {
+  res.json({ estudiante: await darDeBaja(idDeRuta(req), req.usuario!.id) });
 }
