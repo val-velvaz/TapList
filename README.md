@@ -11,8 +11,9 @@ Hasta ahora incluye:
 - El **registro de asistencia por NFC**: autenticación de los lectores ESP32, el endpoint de lecturas con la lógica del diagrama de actividades AD-03, soporte para lecturas guardadas sin conexión y un simulador para probar sin el dispositivo.
 - La **gestión de estudiantes** para el Administrador (P4, P5, AD-06 y AD-07): consulta paginada con búsqueda, alta, vinculación y reemplazo de credenciales NFC y baja lógica, todo con bitácora.
 - La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada con filtros, solo de sus clases, y aviso en tiempo real con SSE.
+- Las **estadísticas y la exportación** para el Docente (P3, AD-05, RF-16 y RF-06): porcentaje de asistencia, retardos y faltas por grupo, clase y periodo, asistencia por semana, estudiantes con más faltas, y exportación a PDF y XLSX.
 
-Los módulos de estadísticas y exportación se agregarán sobre esta misma estructura.
+Falta el frontend, que se construirá sobre esta API.
 
 ## Contenido
 
@@ -26,10 +27,11 @@ Los módulos de estadísticas y exportación se agregarán sobre esta misma estr
 8. [Registro de asistencia por NFC](#registro-de-asistencia-por-nfc)
 9. [Gestión de estudiantes](#gestión-de-estudiantes)
 10. [Consulta de asistencias (Docente)](#consulta-de-asistencias-docente)
-11. [Decisiones técnicas](#decisiones-técnicas)
-12. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
-13. [Estructura del proyecto](#estructura-del-proyecto)
-14. [Pendientes](#pendientes)
+11. [Estadísticas y exportación (Docente)](#estadísticas-y-exportación-docente)
+12. [Decisiones técnicas](#decisiones-técnicas)
+13. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
+14. [Estructura del proyecto](#estructura-del-proyecto)
+15. [Pendientes](#pendientes)
 
 ## Requisitos previos
 
@@ -83,6 +85,7 @@ cp .env.example .env
 | `DISPOSITIVO_MAX_FALLOS_IP` | Fallos de autenticación de dispositivo por IP cada 15 minutos (por defecto, 30). |
 | `SSE_LATIDO_SEGUNDOS` | Cada cuánto el flujo SSE envía un latido y revisa que la sesión siga vigente (por defecto, 25). |
 | `SSE_MAX_CONEXIONES_DOCENTE` | Conexiones SSE simultáneas por docente, una por pestaña (por defecto, 5); la siguiente recibe `429`. |
+| `EXPORTACION_MAX_FILAS` | Máximo de filas al exportar la lista de asistencias (por defecto, 5000); si el filtro da más, la API responde `422`. |
 | `SIMULADOR_API_URL`, `SIMULADOR_DISPOSITIVO_ID`, `SIMULADOR_DISPOSITIVO_CLAVE` | Solo los usa `npm run simular:lectura`. `.env.example` trae el dispositivo y la clave de la semilla (**solo para desarrollo**). |
 
 Para generar un `JWT_SECRET`:
@@ -108,6 +111,7 @@ npm run db:setup:test       # recrea la base de pruebas (las pruebas ya lo hacen
 - `db/migrations/001_esquema_inicial.sql`: las 8 tablas del modelo entidad-relación (`usuario`, `grupo`, `clase`, `estudiante`, `credencial_nfc`, `dispositivo`, `asistencia` y `bitacora`).
 - `db/migrations/002_clave_dispositivo.sql`: agrega `dispositivo.clave_api_hash`. Ver [Cambios al modelo de datos](#cambios-al-modelo-de-datos).
 - `db/migrations/003_historial_credenciales.sql`: permite varias credenciales por estudiante, con una sola activa, e instala la extensión `unaccent` para la búsqueda. Ver [Cambios al modelo de datos](#cambios-al-modelo-de-datos).
+- `db/migrations/004_inscripcion_grupo.sql`: historial de inscripción de cada estudiante a sus grupos, que se mantiene solo con triggers. Ver [Cambios al modelo de datos](#cambios-al-modelo-de-datos).
 - `db/seeds/001_datos_prueba.sql`: 1 Administrador, 2 Docentes, 2 grupos, 3 clases, 5 estudiantes con credencial NFC y 1 dispositivo con clave de prueba. Los datos son ficticios.
 
 Las migraciones se aplican en orden alfabético y las semillas, después de todas ellas.
@@ -184,7 +188,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 120 pruebas en cinco archivos:
+Hay 139 pruebas en seis archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -193,8 +197,11 @@ Hay 120 pruebas en cinco archivos:
 | `tests/lecturas.test.ts` | 24 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
 | `tests/estudiantes.test.ts` | 37 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
 | `tests/asistencias.test.ts` | 18 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
+| `tests/estadisticas.test.ts` | 19 | Estadísticas con un mes de datos fijos y resultados calculados a mano, y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
 
-En las pruebas, `SSE_LATIDO_SEGUNDOS` vale `0.5` (en `vitest.config.ts`) para comprobar en segundos el cierre por sesión terminada.
+En las pruebas, `vitest.config.ts` cambia dos valores:
+- `SSE_LATIDO_SEGUNDOS` vale `0.5`, para comprobar en segundos el cierre por sesión terminada.
+- `EXPORTACION_MAX_FILAS` vale `12`, para probar el `422` con pocos datos.
 
 ### Autenticación web (`auth.test.ts`)
 
@@ -277,6 +284,37 @@ Para la reversión, las pruebas llaman al servicio con el id de un Docente. El t
 | SSE: cuenta desactivada | `sesion_terminada` en el siguiente latido, flujo cerrado y reconexión con `401` |
 
 Para confirmar que la prueba de aislamiento detecta un error real, se cambió a propósito el SSE para enviar cada evento a **todos** los docentes, y esa prueba falló.
+
+### Estadísticas y exportación (`estadisticas.test.ts`)
+
+El encabezado de la prueba describe un mes de datos y el cálculo hecho a mano. Las pruebas comparan los resultados **exactamente**:
+- **Docentes y clases:** el docente E tiene 3 clases en 2 grupos, y el docente F tiene una clase en uno de esos grupos.
+- **Estudiantes:** 8, entre ellos uno que se da de alta, dos que se dan de baja y uno que cambia de grupo a mitad del mes.
+- **Días sin clase:** un lunes festivo sin registros.
+- **Fuera del periodo:** un registro del mes anterior.
+
+| Caso | Resultado esperado |
+|---|---|
+| Resumen de octubre | 7 sesiones, 26 esperados, 12 asistencias, 4 retardos, 10 faltas, 61.5 % |
+| Por semana, por clase y estudiantes con más faltas | Cada fila calculada a mano; empates resueltos por retardos y apellidos |
+| Alta, baja y cambio de grupo | No suman faltas fuera de su inscripción, ni el día del alta o de la baja |
+| Lunes sin registros | No cuenta como sesión |
+| Filtros por grupo, clase y periodo; `top` | Totales calculados a mano |
+| Periodo que llega al futuro | Se recorta a hoy, en la zona de la escuela |
+| Periodo sin sesiones | Todo en cero y porcentaje `null` |
+| Docente F | Solo ve su clase; E recibe `404` con la clase y el grupo de F |
+| Triggers de inscripción | El alta, el cambio de grupo y la baja abren y cierran inscripciones con la fecha de hoy |
+| XLSX y PDF de estadísticas | Mismos totales, semanas y estudiantes que el endpoint; sin UID; nombre de archivo descriptivo |
+| XLSX y PDF de la lista | Mismas filas y totales que `GET /api/asistencias`; sin UID |
+| Más filas que el límite | `422` con el número de filas y el máximo |
+| Administrador / sin sesión | `403` / `401` |
+
+**Mutaciones a propósito**, para confirmar que las pruebas detectan errores reales en la regla de faltas:
+- Contar el día del alta.
+- Contar el día de la baja.
+- No contar a quien registró fuera de su inscripción.
+
+Cada una hizo fallar 7 pruebas.
 
 ## API de autenticación
 
@@ -636,6 +674,80 @@ fuente.addEventListener('sesion_terminada', () => {
 
 Si el frontend vive en otro origen, usa `new EventSource(url, { withCredentials: true })` y configura CORS con credenciales.
 
+## Estadísticas y exportación (Docente)
+
+Pantalla P3, diagrama de actividades AD-05, RF-16 y RF-06. Todo exige `requiereSesion` + `requiereRol('Docente')`, así que un Administrador recibe `403`. El aislamiento es el mismo que en la consulta de asistencias: un `id_grupo` o `id_clase` ajeno responde `404`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /api/estadisticas` | Indicadores de P3 por grupo, clase y periodo |
+| `GET /api/estadisticas/exportar?formato=pdf\|xlsx` | Las mismas estadísticas en un archivo |
+| `GET /api/asistencias/exportar?formato=pdf\|xlsx` | La lista de P2, con los mismos filtros y sin paginar |
+
+### Indicadores (RF-16)
+
+`GET /api/estadisticas?desde=2026-10-01&hasta=2026-10-31&id_grupo=&id_clase=&top=10`
+
+| Parámetro | Valores |
+|---|---|
+| `desde`, `hasta` | **Obligatorios**, `YYYY-MM-DD`. El periodo puede durar hasta 366 días. Si `hasta` cae en el futuro, se recorta a hoy, en la zona de la escuela. |
+| `id_grupo`, `id_clase` | Opcionales; deben ser del docente (si no, `404`) |
+| `top` | Cuántos estudiantes devolver en «más faltas», de 1 a 50 (por defecto, 10) |
+
+La respuesta trae:
+
+| Campo | Contenido |
+|---|---|
+| `periodo` | `desde` y `hasta` efectivos |
+| `filtros` | Grupo y clase elegidos, con sus nombres |
+| `resumen` | `sesiones`, `esperados`, `asistencias`, `retardos`, `faltas` y `porcentaje_asistencia` |
+| `por_semana` | Lo mismo por semana ISO (`semana` = el lunes), para la gráfica de P3 |
+| `por_clase` | Lo mismo por clase |
+| `estudiantes_con_mas_faltas` | Solo quienes tienen al menos una falta. Se ordenan por faltas, luego por retardos y luego por apellidos. Sin UID. |
+
+`porcentaje_asistencia` = `(asistencias + retardos) / esperados × 100`, con un decimal. Vale `null` si no hubo esperados.
+
+Todo sale de **una sola consulta SQL** (`estadisticas.service.ts`), que también usa la exportación.
+
+### Cómo se calculan las faltas
+
+El sistema no guarda las faltas: solo guarda asistencias y retardos. Las faltas se calculan así:
+
+1. **Sesión:** un par (clase, fecha) del periodo, hasta hoy, en el que **al menos una credencial registró asistencia**, y cuya fecha coincide con el `dia_semana` de la clase.
+2. **Esperados en una sesión:**
+   - Los estudiantes inscritos en el grupo de la clase según `inscripcion_grupo`, **sin contar el día del alta ni el de la baja o cambio de grupo** (`desde < fecha < hasta`). Por ejemplo, quien se da de alta a las 10:00 no pudo llegar a la clase de las 7:00.
+   - Además, siempre cuenta quien sí registró ese día, aunque esté fuera de esas fechas. Una asistencia real nunca se pierde.
+3. **Falta:** un esperado sin registro en esa sesión.
+
+**Por qué «hubo clase si alguien registró».** Comparamos tres opciones:
+
+| Opción | Ventajas | Desventajas |
+|---|---|---|
+| Calendario puro: toda fecha que coincide con `dia_semana` | Simple | Cada festivo, vacación, clase cancelada o lector descompuesto pone falta a **todo el grupo** |
+| Calendario + tabla `dia_inhabil` | Exacta si la tabla está al día | Cambia el modelo, necesita una pantalla de administración y un festivo olvidado da faltas falsas. Un lector caído sigue dando faltas. |
+| **«Hubo clase si alguien registró»** (elegida) | No cambia el modelo. Detecta sola los festivos, las vacaciones, las clases canceladas y los lectores caídos. **Nunca inventa faltas.** | Si **todo** el grupo falta un día, ese día no cuenta. Si el lector falla a mitad de clase, quien no alcanzó a pasar queda con falta. |
+
+En una escuela, una falta falsa le hace más daño a un estudiante que una falta no contada. Si más adelante se quiere la tabla `dia_inhabil`, se puede sumar a esta regla.
+
+**Altas, bajas y cambios de grupo:** con el modelo original no se podía saber desde cuándo ni hasta cuándo perteneció un estudiante a un grupo. La fecha de baja solo estaba como texto en la bitácora, y los cambios de grupo no dejaban rastro. Por eso, la migración 004 agrega `inscripcion_grupo`, que se mantiene sola con triggers. Ver [Cambios al modelo de datos](#cambios-al-modelo-de-datos).
+
+### Exportación (RF-06)
+
+| Ruta | Parámetros | Contenido |
+|---|---|---|
+| `GET /api/asistencias/exportar` | `formato` + los mismos filtros de `GET /api/asistencias` | Encabezado (docente, filtros, fecha de generación), una fila por asistencia y los totales: registros, asistencias y retardos |
+| `GET /api/estadisticas/exportar` | `formato` + los mismos parámetros de `GET /api/estadisticas` | Encabezado, resumen, por clase, por semana y estudiantes con más faltas. En XLSX, cada tabla va en su propia hoja: «Resumen», «Por semana» y «Más faltas». |
+
+- **Mismos totales que la pantalla, por construcción:** la exportación llama a las mismas funciones que los endpoints JSON (`listarAsistencias` y `calcularEstadisticas`). Las pruebas leen los archivos y comparan sus totales con los del endpoint.
+- **Sin UID** (RNF-06): esas funciones no leen `credencial_nfc`.
+- **Límite:** la lista exporta como máximo `EXPORTACION_MAX_FILAS` filas (5000 por defecto). Si el filtro da más, responde **`422`** «La exportación tendría N filas y el máximo es M. Acota el periodo o los filtros.», en lugar de cortar el archivo en silencio.
+- **Nombres de archivo descriptivos y solo ASCII**, por ejemplo:
+  - `asistencias_D01_Ingenieria-de-Software_2026-10-01_a_2026-10-31.xlsx`
+  - `estadisticas_D01_2026-10-01_a_2026-10-31.pdf`
+- **XLSX:** `exceljs` escribe los textos como texto, nunca como fórmula, así que un nombre que empiece con `=` no se ejecuta en Excel.
+- **PDF:** `pdfkit`, tamaño carta horizontal, con Helvetica (incluye acentos y eñes). Las tablas se reparten en varias páginas con la cabecera repetida, y cada hoja lleva su número de página.
+- **Dependencias:** `exceljs@4` depende de `uuid@8`, que tiene una alerta moderada (GHSA-w5hq-g745-h8pq). La alerta es por las funciones v3, v5 y v6 con un buffer, que `exceljs` no usa. Aun así, `package.json` fuerza `uuid@11` con `overrides`. `npm audit` reporta 0 vulnerabilidades.
+
 ## Decisiones técnicas
 
 - **Node 24 LTS, Express 5 y TypeScript.** Express 5 propaga solo los errores de los handlers `async`, así que no hacen falta envoltorios. Las capas están separadas en `routes`, `controller`, `service` y `schemas` por módulo.
@@ -690,6 +802,7 @@ Cambios respecto al modelo entidad-relación entregado. **El equipo debe actuali
 
 1. **DISPOSITIVO:** agregar el atributo `clave_api_hash`.
 2. **ESTUDIANTE — CREDENCIAL_NFC («posee»):** cambiar la cardinalidad de **1:1** a **1:N**, con la nota «a lo más una credencial activa por estudiante». `CREDENCIAL_NFC.id_estudiante` deja de ser único; `CREDENCIAL_NFC.uid` sigue siéndolo.
+3. **Nueva entidad INSCRIPCION_GRUPO** con los atributos `id_inscripcion` (PK), `id_estudiante` (FK), `id_grupo` (FK), `desde` y `hasta`. Relaciones: **ESTUDIANTE 1—N INSCRIPCION_GRUPO N—1 GRUPO**. `ESTUDIANTE.id_grupo` se queda como el grupo actual.
 
 ### Detalle
 
@@ -697,9 +810,12 @@ Cambios respecto al modelo entidad-relación entregado. **El equipo debe actuali
 |---|---|---|---|---|
 | 1 | `002_clave_dispositivo.sql` | DISPOSITIVO | Nueva columna `clave_api_hash` (texto). Obligatoria para dispositivos nuevos o modificados, con `CHECK (clave_api_hash IS NOT NULL) NOT VALID`; las filas anteriores a la migración no se validan. | RNF-03: solo dispositivos registrados y activos pueden registrar asistencias. El modelo no tenía dónde guardar la credencial del lector. Se guarda solo el hash argon2id, nunca la clave. |
 | 2 | `003_historial_credenciales.sql` | CREDENCIAL_NFC | Se quita `UNIQUE (id_estudiante)` y se crea el índice único parcial `(id_estudiante) WHERE activa`. La relación con ESTUDIANTE pasa de 1:1 a 1:N, con una sola credencial activa. | Reemplazar una credencial perdida o dañada sin perder la trazabilidad: la anterior se conserva inactiva, con su `fecha_asignacion`, en lugar de sobrescribirse. |
+| 3 | `004_inscripcion_grupo.sql` | INSCRIPCION_GRUPO (nueva) | Guarda desde y hasta cuándo perteneció cada estudiante a cada grupo; `hasta` vacío significa inscripción vigente, y solo puede haber una vigente por estudiante. Triggers sobre ESTUDIANTE la mantienen al dar de alta, de baja, cambiar de grupo o reactivar. La migración rellena los estudiantes existentes. | RF-16: no contar faltas en días en que el estudiante no pertenecía al grupo. Con el modelo anterior no se podía saber la fecha de baja (solo como texto en la bitácora) ni ningún cambio de grupo. |
 
 - Un dispositivo sin clave no puede autenticarse hasta que se le asigne una con `npm run dispositivo:clave -- <id>`.
 - La migración 003 también instala la extensión `unaccent`, que se usa para buscar estudiantes sin distinguir acentos. Es una extensión estándar de PostgreSQL, no una tabla, así que no cambia el diagrama.
+- **Zona horaria de las sesiones de base de datos:** la aplicación y `db:setup` abren cada sesión con `timezone = ZONA_HORARIA_ESCUELA`. Así, `current_date` (que usan los triggers de la 004) es el día de la escuela. Es configuración, no cambia el diagrama.
+- **Días sin clase:** se resuelven sin tabla, con la regla «hubo clase si alguien registró». Una tabla `dia_inhabil` queda como opción futura y sería otro cambio al modelo.
 
 ## Estructura del proyecto
 
@@ -708,6 +824,7 @@ db/
   migrations/001_esquema_inicial.sql
   migrations/002_clave_dispositivo.sql
   migrations/003_historial_credenciales.sql
+  migrations/004_inscripcion_grupo.sql
   seeds/001_datos_prueba.sql
   preparar-base.ts           crea la BD, aplica migraciones y semilla
 docs/contrato-dispositivo.md contrato de la API para el firmware del ESP32
@@ -726,7 +843,9 @@ src/
   modules/auth/              routes, controller, service, schemas, types
   modules/bitacora/          service: escribe en la bitácora dentro de una transacción
   modules/dispositivos/      service: autenticación y última conexión de los lectores
+  modules/estadisticas/      routes, controller, service, schemas (P3, RF-16)
   modules/estudiantes/       routes, controller, service, schemas (P4, P5, AD-06, AD-07)
+  modules/exportacion/       service, controller, pdf.ts (pdfkit) y xlsx.ts (exceljs) (RF-06)
   modules/grupos/            routes, service (lista para el formulario de alta)
   modules/lecturas/          routes, controller, service, schemas y tiempo.ts (funciones puras)
   types/express.d.ts         tipos de req.usuario y req.dispositivo
@@ -738,14 +857,17 @@ src/
 tests/                       pruebas unitarias y de integración
 ```
 
-Cada módulo nuevo (por ejemplo, `estadisticas`) va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
+Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
 
 ## Pendientes
 
 - **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
-- Fuera del alcance por ahora: el firmware del ESP32, las estadísticas, la exportación PDF/XLSX y el frontend.
+- Fuera del alcance por ahora: el firmware del ESP32 y el frontend.
+- **Estadísticas, siguientes pasos:**
+  - Una tabla `dia_inhabil` opcional, si la escuela quiere contar como faltas los días en que todo el grupo faltó.
+  - Exportar en segundo plano si alguna vez hace falta superar `EXPORTACION_MAX_FILAS`.
+  - Un endpoint para cambiar de grupo a un estudiante, que ya quedaría registrado en `inscripcion_grupo` gracias a los triggers.
 - **Consulta de asistencias, siguientes pasos:**
-  - **Faltas:** el modelo solo guarda «Asistencia» y «Retardo». Calcular quién **no** registró en una clase encaja mejor con las estadísticas.
   - Un selector con los estudiantes de un grupo para el filtro por estudiante.
   - **SSE con varias instancias del servidor:** hoy las conexiones y el `EventEmitter` viven en un solo proceso. Con más de una instancia haría falta Redis pub/sub o `LISTEN/NOTIFY` de PostgreSQL.
 - **Gestión de estudiantes, siguientes pasos:**
