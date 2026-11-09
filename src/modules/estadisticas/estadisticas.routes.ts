@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requiereRol } from '../../middleware/requiereRol.js';
 import { requiereSesion } from '../../middleware/requiereSesion.js';
+import { exportarResumenEstadisticas } from '../exportacion/exportacion.controller.js';
 import { estadisticas } from './estadisticas.controller.js';
 
 export const rutasEstadisticas = Router();
@@ -12,3 +13,4 @@ rutasEstadisticas.use(requiereSesion, requiereRol('Docente'), (_req, res, next) 
 });
 
 rutasEstadisticas.get('/', estadisticas);
+rutasEstadisticas.get('/exportar', exportarResumenEstadisticas);

@@ -39,6 +39,9 @@ const esquemaEnv = z.object({
   // Aviso en tiempo real (SSE)
   SSE_LATIDO_SEGUNDOS: z.coerce.number().positive().default(25),
   SSE_MAX_CONEXIONES_DOCENTE: z.coerce.number().int().positive().default(5),
+
+  // Exportación PDF/XLSX: máximo de filas de la lista de asistencias.
+  EXPORTACION_MAX_FILAS: z.coerce.number().int().positive().default(5000),
 });
 
 const resultado = esquemaEnv.safeParse(process.env);
