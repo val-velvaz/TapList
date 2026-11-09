@@ -1,5 +1,7 @@
 # TapList · API
 
+[![Pruebas](https://github.com/val-velvaz/TapList/actions/workflows/pruebas.yml/badge.svg)](https://github.com/val-velvaz/TapList/actions/workflows/pruebas.yml)
+
 Sistema de asistencia escolar con credenciales NFC. Proyecto de Ingeniería de Software del equipo **SoftProduct** (CUCEI, Universidad de Guadalajara).
 
 Hasta ahora incluye:
@@ -152,6 +154,20 @@ npm start       # ejecuta la versión compilada
 ```bash
 npm test
 ```
+
+### Integración continua (GitHub Actions)
+
+El workflow `.github/workflows/pruebas.yml` corre en **cada PR** y en **cada push a `main`**:
+
+1. Levanta un PostgreSQL 18 de servicio.
+2. Instala Node con la versión de `.nvmrc` (24 LTS).
+3. Corre `npm ci`, `npm run typecheck`, `npm run build` y `npm test`.
+
+No usa `.env` ni secretos del repositorio:
+- La contraseña de PostgreSQL solo existe dentro del contenedor efímero de CI.
+- `vitest.config.ts` genera un `JWT_SECRET` aleatorio en cada corrida.
+
+El resultado aparece como un check en cada PR y en la insignia de arriba. Conviene proteger la rama `main` en GitHub para exigir que el check **Tipos, compilación y pruebas** pase antes de fusionar. Se configura en *Settings → Branches → Add branch ruleset → Require status checks to pass*.
 
 Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `tests/globalSetup.ts`:
 
