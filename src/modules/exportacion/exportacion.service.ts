@@ -179,7 +179,10 @@ export async function exportarEstadisticas(
       ['Clase', est.filtros.clase?.materia ?? 'Todas'],
       ['Periodo', `${est.periodo.desde} a ${est.periodo.hasta}`],
       ['Generado', generadoEl()],
-      ['Faltas', 'Solo cuentan los días con al menos un registro, sin el día de alta ni el de baja del estudiante'],
+      [
+        'Cómo se cuentan las faltas',
+        'solo en días con al menos un registro, sin contar el día de alta ni el de baja del estudiante',
+      ],
     ],
   };
 
