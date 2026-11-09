@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { errorParaLog } from '../utils/erroresPg.js';
 import { HttpError } from '../utils/HttpError.js';
 
 export const rutaNoEncontrada: RequestHandler = (_req, _res, next) => {
@@ -21,6 +22,6 @@ export const manejoErrores: ErrorRequestHandler = (error, _req, res, _next) => {
     return;
   }
 
-  console.error(error);
+  console.error(errorParaLog(error));
   res.status(500).json({ error: 'Error interno del servidor' });
 };
