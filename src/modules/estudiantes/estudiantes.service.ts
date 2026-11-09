@@ -99,13 +99,13 @@ export async function listarEstudiantes(filtros: FiltrosConsulta): Promise<Pagin
   const parametro = (valor: unknown) => `$${parametros.push(valor)}`;
 
   if (filtros.q) {
-    // Sin distinguir mayúsculas (ILIKE) ni acentos (unaccent), en "nombre apellidos",
-    // en "apellidos nombre" y en la matrícula.
-    const patron = parametro(`%${escaparLike(filtros.q)}%`);
-    condiciones.push(`(
-      unaccent(e.nombre || ' ' || e.apellidos) ILIKE unaccent(${patron})
-      OR unaccent(e.apellidos || ' ' || e.nombre) ILIKE unaccent(${patron})
-      OR e.matricula ILIKE ${patron})`);
+    // Por palabras: cada una debe aparecer en el nombre, los apellidos o la
+    // matrícula, en cualquier orden ("gomez beatriz" encuentra a "Beatriz
+    // Gómez Ruiz"). Sin distinguir mayúsculas (ILIKE) ni acentos (unaccent).
+    for (const palabra of filtros.q.split(/\s+/).slice(0, 5)) {
+      const patron = parametro(`%${escaparLike(palabra)}%`);
+      condiciones.push(`unaccent(e.nombre || ' ' || e.apellidos || ' ' || e.matricula) ILIKE unaccent(${patron})`);
+    }
   }
   if (filtros.id_grupo) condiciones.push(`e.id_grupo = ${parametro(filtros.id_grupo)}`);
   if (filtros.con_credencial !== undefined) {
