@@ -9,8 +9,9 @@ Hasta ahora incluye:
 - El **esquema completo de la base de datos**, construido a partir del modelo entidad-relación.
 - La **autenticación web**: inicio y cierre de sesión, consulta del usuario actual y middleware de sesión y de rol.
 - El **registro de asistencia por NFC**: autenticación de los lectores ESP32, el endpoint de lecturas con la lógica del diagrama de actividades AD-03, soporte para lecturas guardadas sin conexión y un simulador para probar sin el dispositivo.
+- La **gestión de estudiantes** para el Administrador (P4, P5, AD-06 y AD-07): consulta paginada con búsqueda, alta, vinculación y reemplazo de credenciales NFC y baja lógica, todo con bitácora.
 
-Los módulos de estudiantes, consultas, estadísticas y exportación se agregarán sobre esta misma estructura.
+Los módulos de consultas para docentes, estadísticas y exportación se agregarán sobre esta misma estructura.
 
 ## Contenido
 
@@ -22,10 +23,11 @@ Los módulos de estudiantes, consultas, estadísticas y exportación se agregar�
 6. [Pruebas](#pruebas)
 7. [API de autenticación](#api-de-autenticación)
 8. [Registro de asistencia por NFC](#registro-de-asistencia-por-nfc)
-9. [Decisiones técnicas](#decisiones-técnicas)
-10. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
-11. [Estructura del proyecto](#estructura-del-proyecto)
-12. [Pendientes](#pendientes)
+9. [Gestión de estudiantes](#gestión-de-estudiantes)
+10. [Decisiones técnicas](#decisiones-técnicas)
+11. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
+12. [Estructura del proyecto](#estructura-del-proyecto)
+13. [Pendientes](#pendientes)
 
 ## Requisitos previos
 
@@ -101,6 +103,7 @@ npm run db:setup:test       # recrea la base de pruebas (las pruebas ya lo hacen
 
 - `db/migrations/001_esquema_inicial.sql`: las 8 tablas del modelo entidad-relación (`usuario`, `grupo`, `clase`, `estudiante`, `credencial_nfc`, `dispositivo`, `asistencia` y `bitacora`).
 - `db/migrations/002_clave_dispositivo.sql`: agrega `dispositivo.clave_api_hash`. Ver [Cambios al modelo de datos](#cambios-al-modelo-de-datos).
+- `db/migrations/003_historial_credenciales.sql`: permite varias credenciales por estudiante, con una sola activa, e instala la extensión `unaccent` para la búsqueda. Ver [Cambios al modelo de datos](#cambios-al-modelo-de-datos).
 - `db/seeds/001_datos_prueba.sql`: 1 Administrador, 2 Docentes, 2 grupos, 3 clases, 5 estudiantes con credencial NFC y 1 dispositivo con clave de prueba. Los datos son ficticios.
 
 Las migraciones se aplican en orden alfabético y las semillas, después de todas ellas.
@@ -108,7 +111,7 @@ Las migraciones se aplican en orden alfabético y las semillas, después de toda
 ### Reglas del esquema
 
 - **Llaves foráneas con `ON DELETE RESTRICT`:** nada se borra en cascada, para conservar el historial. Las bajas de estudiantes y usuarios son lógicas (`activo = false`).
-- **`UNIQUE`** en `usuario.correo`, `estudiante.matricula`, `credencial_nfc.uid` y `credencial_nfc.id_estudiante` (relación 1:1), y en `asistencia (id_estudiante, id_clase, fecha)`: una asistencia por clase al día.
+- **`UNIQUE`** en `usuario.correo`, `estudiante.matricula` y `credencial_nfc.uid` (en toda la tabla, también entre credenciales inactivas), y en `asistencia (id_estudiante, id_clase, fecha)`: una asistencia por clase al día. Un índice único parcial sobre `credencial_nfc (id_estudiante) WHERE activa` permite **una sola credencial activa por estudiante** (migración 003).
 - **`CHECK`** en `usuario.rol`, `asistencia.estado`, `dispositivo.estado` (`Activo`, `Inactivo` o `Mantenimiento`), `clase.dia_semana` (1 = lunes … 7 = domingo, como en ISO 8601) y `clase.tolerancia_min >= 0`. El correo del usuario se guarda en minúsculas, y el UID de la credencial, en hexadecimal en mayúsculas.
 - **Índices** en las llaves foráneas y en `asistencia (id_clase, fecha)`, que es la consulta principal de reportes y estadísticas.
 - **Triggers:**
@@ -177,13 +180,14 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 65 pruebas en tres archivos:
+Hay 102 pruebas en cuatro archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
 | `tests/auth.test.ts` | 19 | Inicio y cierre de sesión, `me`, roles y límite de intentos. |
 | `tests/tiempo.test.ts` | 22 | Unitarias de las funciones puras de tiempo: zona horaria, medianoche, domingo, ventana de la clase y estado. |
 | `tests/lecturas.test.ts` | 24 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
+| `tests/estudiantes.test.ts` | 37 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
 
 ### Autenticación web (`auth.test.ts`)
 
@@ -222,6 +226,29 @@ Además se prueban el flujo completo `login → me → logout → me (401)`, que
 
 Además se prueban UID con formato inválido (`400`), una falla simulada al guardar (`500` «No se pudo guardar»), el límite de 60 solicitudes por minuto (`429`), que el evento se emite una vez por registro nuevo y sin el UID, que un oyente con errores no afecta la respuesta, y que la respuesta llega en menos de 500 ms.
 
+### Gestión de estudiantes (`estudiantes.test.ts`)
+
+| Caso | Resultado esperado |
+|---|---|
+| Docente en cualquiera de los 7 endpoints | `403`, sin cambios en la bitácora; sin sesión, `401` |
+| Lista paginada | `total` y `total_paginas` correctos, orden por apellidos, página fuera de rango vacía |
+| Búsqueda `q` | Sin distinguir mayúsculas ni acentos, por palabras en cualquier orden; los comodines `%` y `_` se buscan literalmente |
+| Filtros | `con_credencial`, `estado` e `id_grupo` |
+| Alta sin UID / con UID | `201`; con UID, credencial vinculada y dos entradas en la bitácora |
+| Matrícula duplicada (con otras mayúsculas o espacios) | `409` «Ya existe un estudiante con esa matrícula» |
+| Alta con un UID ya asignado | `409`, y **no** se crea el estudiante (todo o nada) |
+| Grupo inexistente / validaciones | `400` con un mensaje por campo |
+| Vincular | `201`; la credencial registra asistencia en el aula |
+| UID de otro estudiante / ya tiene credencial / dado de baja / no existe | `409`, `409`, `409`, `404` |
+| Dos vinculaciones simultáneas (mismo UID o mismo estudiante) | Una `201` y una `409`; una sola credencial |
+| Reemplazar | La anterior queda inactiva en el historial y sale `RECHAZADA` en el aula; la nueva registra asistencia; la bitácora registra `credencial_nfc#A → credencial_nfc#B` |
+| Volver a vincular una credencial reemplazada | `409`, incluso al mismo estudiante |
+| Baja | Estudiante y credencial inactivos, asistencias conservadas, lectura posterior `RECHAZADA`, segunda baja `409` |
+| Falla de la bitácora en alta, vinculación, reemplazo y baja | El cambio se revierte completo |
+| RNF-06 | Ninguna respuesta ni entrada de la bitácora contiene un UID completo |
+
+Para la reversión, las pruebas llaman al servicio con el id de un Docente. El trigger de la bitácora solo acepta Administradores, así que la falla es real, no simulada. Para confirmar que estas pruebas detectan el error, se quitó a propósito el `BEGIN` de `conTransaccion`: fallaron justo las 5 pruebas de «todo o nada».
+
 ## API de autenticación
 
 Todas las respuestas son JSON y llevan `Cache-Control: no-store`.
@@ -248,6 +275,8 @@ Responde `200` con `{ "usuario": { ... } }` o `401` si no hay sesión válida.
 ### Ejemplos con `curl`
 
 Para Git Bash, macOS o Linux. En PowerShell usa `curl.exe` y escapa las comillas del JSON.
+
+> **Acentos en Windows:** `curl` en Windows convierte los argumentos a la página de códigos del sistema, así que `-d '{"apellidos":"Núñez"}'` llega a la API con caracteres inválidos. Para enviar texto con acentos o eñes, guarda el JSON en un archivo UTF-8 y usa `--data-binary @archivo.json`. Desde el navegador o Postman no pasa.
 
 ```bash
 # Iniciar sesión y guardar la cookie en cookies.txt
@@ -362,6 +391,120 @@ Hace la petición como el ESP32, con el dispositivo de la semilla y un *timeout*
 
 Las clases de la semilla son los lunes, martes y miércoles. En otro día u horario, la respuesta será `SIN_CLASE`. Para probar una asistencia fuera de horario, usa `--leido-en` con una hora de clase de las últimas 24 horas.
 
+## Gestión de estudiantes
+
+Pantallas P4 (consulta) y P5 (alta y detalle), diagramas de actividades AD-06 (vincular credencial) y AD-07 (baja). Todo el módulo exige `requiereSesion` + `requiereRol('Administrador')` (RF-09) y responde con `Cache-Control: no-store`.
+
+| Método y ruta | Qué hace | Éxito | Errores |
+|---|---|---|---|
+| `GET /api/estudiantes` | Lista paginada con búsqueda y filtros (P4) | `200` | `400` |
+| `GET /api/estudiantes/:id` | Detalle con el historial de credenciales (P5) | `200` | `400`, `404` |
+| `POST /api/estudiantes` | Alta, con `uid` opcional (P5) | `201` + `Location` | `400`, `409` |
+| `POST /api/estudiantes/:id/credencial` | Vincula una credencial (AD-06) | `201` | `400`, `404`, `409` |
+| `PUT /api/estudiantes/:id/credencial` | Reemplaza la credencial activa | `200` | `400`, `404`, `409` |
+| `POST /api/estudiantes/:id/baja` | Baja lógica (AD-07) | `200` | `400`, `404`, `409` |
+| `GET /api/grupos` | Grupos para el formulario de alta | `200` | — |
+
+### Consulta (P4)
+
+`GET /api/estudiantes?q=gomez&id_grupo=1&con_credencial=true&estado=activos&pagina=1&por_pagina=20`
+
+| Parámetro | Valores | Por defecto |
+|---|---|---|
+| `q` | Texto. Cada palabra debe aparecer en el nombre, los apellidos o la matrícula, en cualquier orden, sin distinguir mayúsculas (`ILIKE`) ni acentos (`unaccent`). | — |
+| `id_grupo` | Id del grupo | — |
+| `con_credencial` | `true` o `false` (tiene o no una credencial **activa**) | — |
+| `estado` | `activos`, `inactivos` o `todos` | `activos` |
+| `pagina` / `por_pagina` | Enteros; `por_pagina` va de 1 a 100 | `1` / `20` |
+
+```json
+{
+  "datos": [
+    {
+      "id": 1, "matricula": "220000001", "nombre": "Andrea", "apellidos": "López Torres",
+      "correo": "andrea.lopez@alumnos.udg.mx", "activo": true,
+      "grupo": { "id": 1, "nombre": "D01", "ciclo_escolar": "2026-B" },
+      "credencial": { "id": 1, "uid_enmascarado": "****B2C3", "activa": true, "fecha_asignacion": "2026-11-09T14:44:57.260Z" }
+    }
+  ],
+  "pagina": 1, "por_pagina": 20, "total": 1, "total_paginas": 1
+}
+```
+
+Las respuestas de este módulo usan `snake_case` (`total_paginas`, `uid_enmascarado`, `ciclo_escolar`), igual que los parámetros y las columnas de la base.
+
+### Alta (P5)
+
+```json
+{ "matricula": "230000010", "nombre": "Mario", "apellidos": "Núñez Peña",
+  "correo": "mario.nunez@alumnos.udg.mx", "id_grupo": 1, "uid": "0A1B2C3D" }
+```
+
+- **`matricula`:** se normaliza con `trim` y mayúsculas y acepta de 5 a 20 letras o números.
+- **`correo`:** se guarda en minúsculas.
+- **`uid`:** es **opcional**. Si viene, el alta y la vinculación ocurren en la misma transacción: si el UID ya está asignado, tampoco se crea el estudiante (todo o nada).
+- **Errores:**
+  - Matrícula o UID duplicados: `409` con un mensaje claro.
+  - Grupo inexistente: `400` sobre `id_grupo`.
+
+### Cómo llega el UID al vincular
+
+En esta versión, el UID se **captura en la pantalla P5**. El campo se puede escribir a mano o llenar con un **lector NFC USB de escritorio que funciona como teclado**: el administrador pulsa «Leer tarjeta», acerca la tarjeta y el lector «escribe» el UID.
+
+- **El UID se valida y normaliza igual que en las lecturas del ESP32** (`esquemaUid`): hexadecimal de 8 a 20 caracteres, sin espacios ni dos puntos y en mayúsculas.
+- ⚠️ **Configura el lector USB para que entregue el UID en hexadecimal y con los bytes en el mismo orden que el ESP32.** Muchos lectores USB entregan, por defecto, el UID en decimal o con los bytes invertidos. Si no coincide, la credencial se vincula, pero las lecturas en el aula salen `RECHAZADA`. Para verificarlo, vincula una tarjeta y pásala por un lector del aula o por el simulador.
+- **Siguiente versión, el «modo registro» del ESP32:** la API dejaría pendiente la vinculación unos segundos y la siguiente tarjeta leída en un lector de registro dedicado se vincularía sola. Así, el formato siempre coincide y el UID completo nunca pasa por la web. La lógica ya está en una sola función, `insertarCredencial`, que el modo registro podrá reutilizar.
+
+### Reemplazar una credencial perdida o dañada
+
+`PUT /api/estudiantes/:id/credencial` con `{ "uid": "..." }` hace todo en una transacción:
+1. Desactiva la credencial activa, que **se conserva** en el historial con `activa = false`.
+2. Vincula la nueva.
+3. Escribe en la bitácora `credencial_nfc#7 → credencial_nfc#9 (estudiante#12)`.
+
+**Una credencial reemplazada no se puede volver a vincular a nadie, ni siquiera al mismo estudiante. Es intencional.**
+- `credencial_nfc.uid` es único en toda la tabla, también entre credenciales inactivas.
+- Si una tarjeta reportada como perdida aparece en otras manos, cualquier lectura con ella sale `RECHAZADA`, y el historial siempre indica a quién perteneció.
+- Si el estudiante la recupera, se le vincula una tarjeta nueva.
+
+### Baja lógica (AD-07)
+
+`POST /api/estudiantes/:id/baja` hace todo en una transacción:
+- Pone `estudiante.activo = false`.
+- Desactiva su credencial activa.
+- Escribe en la bitácora.
+
+No borra nada:
+- Las asistencias anteriores se conservan.
+- Una lectura posterior de esa credencial sale `RECHAZADA` (RF-04).
+
+Una segunda baja responde `409`.
+
+### Bitácora (RNF-03)
+
+Cada operación escribe en `bitacora` con el **mismo cliente de la transacción** (`conTransaccion` + `registrarEnBitacora`). Si la escritura en la bitácora falla, se revierte todo el cambio.
+
+| Acción | `entidad_afectada` |
+|---|---|
+| `ALTA_ESTUDIANTE` | `estudiante#12` |
+| `VINCULAR_CREDENCIAL` | `credencial_nfc#9 → estudiante#12` |
+| `REEMPLAZAR_CREDENCIAL` | `credencial_nfc#7 → credencial_nfc#9 (estudiante#12)` |
+| `BAJA_ESTUDIANTE` | `estudiante#12 (credencial_nfc#9 desactivada)` o `estudiante#12` |
+
+La bitácora nunca guarda UID ni nombres: solo ids internos.
+
+### Privacidad del UID (RNF-06)
+
+- Las consultas enmascaran el UID **dentro del SQL** (`'****' || right(uid, 4)`), así que el UID completo no sale de la base hacia la aplicación.
+- El UID que captura el administrador nunca se devuelve: las respuestas solo traen `uid_enmascarado`.
+- **Logs de errores:** PostgreSQL incluye los valores de la fila en el `DETAIL` de sus errores; por ejemplo, «Ya existe la llave (uid)=(04A1B2C3)». Por eso los errores inesperados se registran con `errorParaLog`, que omite `detail`.
+
+### Concurrencia
+
+- **Duplicados:** los detectan las restricciones `UNIQUE` de la base y se traducen a `409`, sin un `SELECT` previo.
+- **Operaciones sobre el mismo estudiante:** cada una bloquea su fila con `SELECT … FOR UPDATE`, así que una baja y una vinculación simultáneas se ejecutan una después de otra.
+- **Probado:** dos vinculaciones simultáneas del mismo UID, o al mismo estudiante, dejan una sola credencial.
+
 ## Decisiones técnicas
 
 - **Node 24 LTS, Express 5 y TypeScript.** Express 5 propaga solo los errores de los handlers `async`, así que no hacen falta envoltorios. Las capas están separadas en `routes`, `controller`, `service` y `schemas` por módulo.
@@ -410,13 +553,22 @@ El registro usa `INSERT ... ON CONFLICT (id_estudiante, id_clase, fecha) DO NOTH
 
 ## Cambios al modelo de datos
 
-Cambios respecto al modelo entidad-relación entregado. **El equipo debe actualizar la documentación del modelo** para que coincida.
+Cambios respecto al modelo entidad-relación entregado. **El equipo debe actualizar el diagrama entidad-relación** con los dos cambios de abajo para que coincida con la base.
 
-| Migración | Tabla | Cambio | Motivo |
-|---|---|---|---|
-| `002_clave_dispositivo.sql` | DISPOSITIVO | Nueva columna `clave_api_hash` (texto). Obligatoria para dispositivos nuevos o modificados, con `CHECK (clave_api_hash IS NOT NULL) NOT VALID`; las filas anteriores a la migración no se validan. | RNF-03: solo dispositivos registrados y activos pueden registrar asistencias. El modelo no tenía dónde guardar la credencial del lector. Se guarda solo el hash argon2id, nunca la clave. |
+### Qué cambiar en el diagrama
 
-Un dispositivo sin clave no puede autenticarse hasta que se le asigne una con `npm run dispositivo:clave -- <id>`.
+1. **DISPOSITIVO:** agregar el atributo `clave_api_hash`.
+2. **ESTUDIANTE — CREDENCIAL_NFC («posee»):** cambiar la cardinalidad de **1:1** a **1:N**, con la nota «a lo más una credencial activa por estudiante». `CREDENCIAL_NFC.id_estudiante` deja de ser único; `CREDENCIAL_NFC.uid` sigue siéndolo.
+
+### Detalle
+
+| # | Migración | Tabla | Cambio | Motivo |
+|---|---|---|---|---|
+| 1 | `002_clave_dispositivo.sql` | DISPOSITIVO | Nueva columna `clave_api_hash` (texto). Obligatoria para dispositivos nuevos o modificados, con `CHECK (clave_api_hash IS NOT NULL) NOT VALID`; las filas anteriores a la migración no se validan. | RNF-03: solo dispositivos registrados y activos pueden registrar asistencias. El modelo no tenía dónde guardar la credencial del lector. Se guarda solo el hash argon2id, nunca la clave. |
+| 2 | `003_historial_credenciales.sql` | CREDENCIAL_NFC | Se quita `UNIQUE (id_estudiante)` y se crea el índice único parcial `(id_estudiante) WHERE activa`. La relación con ESTUDIANTE pasa de 1:1 a 1:N, con una sola credencial activa. | Reemplazar una credencial perdida o dañada sin perder la trazabilidad: la anterior se conserva inactiva, con su `fecha_asignacion`, en lugar de sobrescribirse. |
+
+- Un dispositivo sin clave no puede autenticarse hasta que se le asigne una con `npm run dispositivo:clave -- <id>`.
+- La migración 003 también instala la extensión `unaccent`, que se usa para buscar estudiantes sin distinguir acentos. Es una extensión estándar de PostgreSQL, no una tabla, así que no cambia el diagrama.
 
 ## Estructura del proyecto
 
@@ -424,6 +576,7 @@ Un dispositivo sin clave no puede autenticarse hasta que se le asigne una con `n
 db/
   migrations/001_esquema_inicial.sql
   migrations/002_clave_dispositivo.sql
+  migrations/003_historial_credenciales.sql
   seeds/001_datos_prueba.sql
   preparar-base.ts           crea la BD, aplica migraciones y semilla
 docs/contrato-dispositivo.md contrato de la API para el firmware del ESP32
@@ -434,24 +587,33 @@ scripts/
 src/
   config/env.ts              variables de entorno validadas con zod
   db/pool.ts                 pool de conexiones a PostgreSQL
+  db/transaccion.ts          conTransaccion: BEGIN / COMMIT / ROLLBACK
   eventos/eventos.ts         EventEmitter tipado (asistencia:registrada)
   middleware/                requiereSesion, requiereRol, requiereDispositivo,
                              limiteIntentos, limiteDispositivo, manejoErrores
   modules/auth/              routes, controller, service, schemas, types
+  modules/bitacora/          service: escribe en la bitácora dentro de una transacción
   modules/dispositivos/      service: autenticación y última conexión de los lectores
+  modules/estudiantes/       routes, controller, service, schemas (P4, P5, AD-06, AD-07)
+  modules/grupos/            routes, service (lista para el formulario de alta)
   modules/lecturas/          routes, controller, service, schemas y tiempo.ts (funciones puras)
   types/express.d.ts         tipos de req.usuario y req.dispositivo
-  utils/                     HttpError, contrasena (argon2), sesion (JWT y cookie), uid
+  utils/                     HttpError, contrasena (argon2), sesion (JWT y cookie), uid,
+                             erroresPg (traduce errores de PostgreSQL y los limpia para el log)
   app.ts                     arma la app de Express (la usan el servidor y las pruebas)
   server.ts                  punto de entrada
 tests/                       pruebas unitarias y de integración
 ```
 
-Cada módulo nuevo (`estudiantes`, `asistencias`, `estadisticas`) va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
+Cada módulo nuevo (`asistencias`, `estadisticas`) va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
 
 ## Pendientes
 
 - **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
-- Fuera del alcance por ahora: el firmware del ESP32, el alta y la baja de estudiantes (con bitácora), las consultas, las estadísticas, la exportación PDF/XLSX, el transporte del aviso en tiempo real (WebSocket o SSE) y el frontend.
+- Fuera del alcance por ahora: el firmware del ESP32, las consultas de asistencias para docentes, las estadísticas, la exportación PDF/XLSX, el transporte del aviso en tiempo real (WebSocket o SSE) y el frontend.
+- **Gestión de estudiantes, siguientes pasos:**
+  - Editar los datos de un estudiante.
+  - Reactivar a un estudiante dado de baja.
+  - El **«modo registro» del ESP32** (ver [Cómo llega el UID](#cómo-llega-el-uid-al-vincular)).
+  - Una vista de la bitácora para el Administrador.
 - La gestión de dispositivos desde la web (alta, baja y rotación de clave con bitácora) todavía no existe; por ahora la clave se asigna con `npm run dispositivo:clave`.
-- La tabla `bitacora` ya existe y es inmutable. Los endpoints de alta y baja tendrán que insertar en ella dentro de la misma transacción que la operación.
