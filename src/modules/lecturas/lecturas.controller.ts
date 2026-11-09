@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { errorParaLog } from '../../utils/erroresPg.js';
 import { HttpError } from '../../utils/HttpError.js';
 import { esquemaLectura } from './lecturas.schemas.js';
 import { procesarLectura } from './lecturas.service.js';
@@ -27,7 +28,7 @@ export async function registrarLectura(req: Request, res: Response): Promise<voi
   } catch (error) {
     if (error instanceof HttpError) throw error;
     // El dispositivo mostrará los 3 destellos azules (no guardada).
-    console.error('[lecturas] No se pudo guardar la lectura:', error);
+    console.error('[lecturas] No se pudo guardar la lectura:', errorParaLog(error));
     throw new HttpError(500, 'No se pudo guardar');
   }
 }
