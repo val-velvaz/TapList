@@ -1,0 +1,68 @@
+# Corre la verificación de tipos, la compilación y todas las pruebas en cada
+# PR y en cada push a main, contra un PostgreSQL de servicio.
+name: Pruebas
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Si llega un push nuevo al mismo PR, cancela la corrida anterior.
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    name: Tipos, compilación y pruebas
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          # Solo existe dentro del contenedor efímero de CI; no es un secreto real.
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: taplist
+      PGDATABASE_TEST: taplist_test
+      # JWT_SECRET no hace falta: vitest.config.ts genera uno aleatorio por corrida.
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js (versión de .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar tipos
+        run: npm run typecheck
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Correr las pruebas
+        run: npm test
