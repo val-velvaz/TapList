@@ -10,8 +10,9 @@ Hasta ahora incluye:
 - La **autenticación web**: inicio y cierre de sesión, consulta del usuario actual y middleware de sesión y de rol.
 - El **registro de asistencia por NFC**: autenticación de los lectores ESP32, el endpoint de lecturas con la lógica del diagrama de actividades AD-03, soporte para lecturas guardadas sin conexión y un simulador para probar sin el dispositivo.
 - La **gestión de estudiantes** para el Administrador (P4, P5, AD-06 y AD-07): consulta paginada con búsqueda, alta, vinculación y reemplazo de credenciales NFC y baja lógica, todo con bitácora.
+- La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada con filtros, solo de sus clases, y aviso en tiempo real con SSE.
 
-Los módulos de consultas para docentes, estadísticas y exportación se agregarán sobre esta misma estructura.
+Los módulos de estadísticas y exportación se agregarán sobre esta misma estructura.
 
 ## Contenido
 
@@ -24,10 +25,11 @@ Los módulos de consultas para docentes, estadísticas y exportación se agregar
 7. [API de autenticación](#api-de-autenticación)
 8. [Registro de asistencia por NFC](#registro-de-asistencia-por-nfc)
 9. [Gestión de estudiantes](#gestión-de-estudiantes)
-10. [Decisiones técnicas](#decisiones-técnicas)
-11. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
-12. [Estructura del proyecto](#estructura-del-proyecto)
-13. [Pendientes](#pendientes)
+10. [Consulta de asistencias (Docente)](#consulta-de-asistencias-docente)
+11. [Decisiones técnicas](#decisiones-técnicas)
+12. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
+13. [Estructura del proyecto](#estructura-del-proyecto)
+14. [Pendientes](#pendientes)
 
 ## Requisitos previos
 
@@ -79,6 +81,8 @@ cp .env.example .env
 | `HORAS_MAX_LECTURA_OFFLINE` | Antigüedad máxima de una lectura guardada sin conexión (por defecto, 24). |
 | `DISPOSITIVO_MAX_SOLICITUDES_MINUTO` | Solicitudes por minuto de cada dispositivo autenticado (por defecto, 60). |
 | `DISPOSITIVO_MAX_FALLOS_IP` | Fallos de autenticación de dispositivo por IP cada 15 minutos (por defecto, 30). |
+| `SSE_LATIDO_SEGUNDOS` | Cada cuánto el flujo SSE envía un latido y revisa que la sesión siga vigente (por defecto, 25). |
+| `SSE_MAX_CONEXIONES_DOCENTE` | Conexiones SSE simultáneas por docente, una por pestaña (por defecto, 5); la siguiente recibe `429`. |
 | `SIMULADOR_API_URL`, `SIMULADOR_DISPOSITIVO_ID`, `SIMULADOR_DISPOSITIVO_CLAVE` | Solo los usa `npm run simular:lectura`. `.env.example` trae el dispositivo y la clave de la semilla (**solo para desarrollo**). |
 
 Para generar un `JWT_SECRET`:
@@ -180,7 +184,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 102 pruebas en cuatro archivos:
+Hay 119 pruebas en cinco archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -188,6 +192,9 @@ Hay 102 pruebas en cuatro archivos:
 | `tests/tiempo.test.ts` | 22 | Unitarias de las funciones puras de tiempo: zona horaria, medianoche, domingo, ventana de la clase y estado. |
 | `tests/lecturas.test.ts` | 24 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
 | `tests/estudiantes.test.ts` | 37 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
+| `tests/asistencias.test.ts` | 17 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
+
+En las pruebas, `SSE_LATIDO_SEGUNDOS` vale `0.5` (en `vitest.config.ts`) para comprobar en segundos el cierre por sesión terminada.
 
 ### Autenticación web (`auth.test.ts`)
 
@@ -248,6 +255,27 @@ Además se prueban UID con formato inválido (`400`), una falla simulada al guar
 | RNF-06 | Ninguna respuesta ni entrada de la bitácora contiene un UID completo |
 
 Para la reversión, las pruebas llaman al servicio con el id de un Docente. El trigger de la bitácora solo acepta Administradores, así que la falla es real, no simulada. Para confirmar que estas pruebas detectan el error, se quitó a propósito el `BEGIN` de `conTransaccion`: fallaron justo las 5 pruebas de «todo o nada».
+
+### Consulta de asistencias (`asistencias.test.ts`)
+
+| Caso | Resultado esperado |
+|---|---|
+| Administrador / sin sesión en los 3 endpoints | `403` / `401` |
+| Docente A y docente B | Cada uno ve solo las asistencias de sus clases, ordenadas de la más reciente a la más antigua |
+| Filtro por la clase, el grupo o un estudiante del otro docente | `404`, con la misma respuesta que un id inexistente |
+| Filtros por clase, grupo, estudiante, estado y fechas, solos y combinados | Totales correctos; `desde` y `hasta` incluidos |
+| Paginación | `total`, `total_paginas` y página fuera de rango vacía |
+| Validación | `400` por campo; `hasta` anterior a `desde` |
+| RNF-06 | Ninguna clave ni valor relacionado con el UID |
+| Filtros del docente | Solo sus grupos y clases |
+| SSE: lectura NFC en la clase de A y luego en la de B | Le llega solo al docente correcto, en menos de 5 s, con `id` igual al de la asistencia |
+| SSE: lectura duplicada | No envía evento |
+| SSE: dos pestañas del mismo docente | Las dos reciben el evento |
+| SSE: una conexión más del límite | `429`; otro docente no se afecta y, al cerrar, se liberan los lugares |
+| SSE: reconexión con `Last-Event-ID` | Reenvía, en orden y antes de `conectado`, solo lo posterior y del mismo docente |
+| SSE: cuenta desactivada | `sesion_terminada` en el siguiente latido, flujo cerrado y reconexión con `401` |
+
+Para confirmar que la prueba de aislamiento detecta un error real, se cambió a propósito el SSE para enviar cada evento a **todos** los docentes, y esa prueba falló.
 
 ## API de autenticación
 
@@ -365,12 +393,7 @@ Si el ESP32 pierde la conexión, guarda la lectura con su hora local y la reenv�
 
 `src/eventos/eventos.ts` exporta un `EventEmitter` tipado. Cada asistencia **nueva** emite `asistencia:registrada` con `idAsistencia`, `idEstudiante`, `idClase`, `idDispositivo`, `fecha`, `hora` y `estado`, **sin el UID**. Los duplicados y los rechazos no emiten. Si un oyente lanza un error, se registra en el log y no afecta la respuesta al dispositivo.
 
-Es el punto de extensión para el aviso en tiempo real a la web (RNF-01). El transporte (WebSocket o SSE) se suscribirá aquí sin tocar el módulo de lecturas:
-
-```ts
-import { eventos } from './eventos/eventos.js';
-eventos.on('asistencia:registrada', (datos) => { /* avisar a la web */ });
-```
+El aviso en tiempo real a la web (RNF-01) se suscribe a este evento, sin tocar el módulo de lecturas. Ver [Aviso en tiempo real](#aviso-en-tiempo-real-sse).
 
 ### Simulador
 
@@ -505,6 +528,111 @@ La bitácora nunca guarda UID ni nombres: solo ids internos.
 - **Operaciones sobre el mismo estudiante:** cada una bloquea su fila con `SELECT … FOR UPDATE`, así que una baja y una vinculación simultáneas se ejecutan una después de otra.
 - **Probado:** dos vinculaciones simultáneas del mismo UID, o al mismo estudiante, dejan una sola credencial.
 
+## Consulta de asistencias (Docente)
+
+Pantalla P2 y diagrama de actividades AD-04. Todo el módulo exige `requiereSesion` + `requiereRol('Docente')`: un Administrador recibe `403`. Las respuestas llevan `Cache-Control: no-store`.
+
+| Método y ruta | Qué hace |
+|---|---|
+| `GET /api/asistencias` | Lista paginada de las asistencias de **sus** clases |
+| `GET /api/asistencias/filtros` | Los grupos y clases que imparte, para los selectores |
+| `GET /api/asistencias/eventos` | Aviso en tiempo real con SSE (`text/event-stream`) |
+
+### Aislamiento entre docentes
+
+- Cada consulta se filtra por `clase.id_docente`, con el id del docente de la sesión. Ese id sale de la base, no del token.
+- Si un filtro apunta a algo que el docente no imparte, la respuesta es **`404`, no `403`**, y es idéntica a la de un id inexistente. Así no se revela que el recurso existe. Aplica a:
+  - `id_clase`: una clase de otro docente.
+  - `id_grupo`: un grupo donde no tiene clases.
+  - `id_estudiante`: un estudiante cuyo grupo **actual** no tiene clases suyas.
+- **Estudiante que cambió de grupo:** sus asistencias anteriores en las clases del docente siguen apareciendo en la lista sin filtro. Lo que no funciona es filtrar por su `id_estudiante` (responde `404`), porque esa regla mira su grupo actual.
+
+### Lista (P2)
+
+`GET /api/asistencias?id_grupo=&id_clase=&id_estudiante=&estado=&desde=&hasta=&pagina=&por_pagina=`
+
+| Parámetro | Valores |
+|---|---|
+| `id_grupo`, `id_clase`, `id_estudiante` | Ids; deben ser del docente (si no, `404`) |
+| `estado` | `Asistencia` o `Retardo` |
+| `desde`, `hasta` | `YYYY-MM-DD` del **día de la clase** (`asistencia.fecha`), ambas incluidas; `hasta` no puede ser anterior a `desde` |
+| `pagina`, `por_pagina` | Como en estudiantes: `por_pagina` de 1 a 100, por defecto 20 |
+
+```json
+{
+  "datos": [
+    {
+      "id": 5, "fecha": "2026-11-09", "hora": "07:05:00", "estado": "Asistencia",
+      "estudiante": { "id": 1, "matricula": "220000001", "nombre": "Andrea", "apellidos": "López Torres", "activo": true },
+      "clase": { "id": 1, "materia": "Ingeniería de Software", "dia_semana": 1, "hora_inicio": "07:00" },
+      "grupo": { "id": 1, "nombre": "D01" },
+      "dispositivo": { "id": 1, "nombre_ubicacion": "Módulo X, aula 101" }
+    }
+  ],
+  "pagina": 1, "por_pagina": 20, "total": 1, "total_paginas": 1
+}
+```
+
+- **Orden:** de lo más reciente a lo más antiguo, por fecha y luego por hora.
+- **Sin UID**, ni siquiera enmascarado: las consultas no tocan `credencial_nfc` (RNF-06).
+- **Base de datos:** se apoya en los índices que ya existen, `asistencia (id_clase, fecha)` e `idx_clase_id_docente`.
+
+`GET /api/asistencias/filtros` responde `{ grupos: [{ id, nombre, ciclo_escolar }], clases: [{ id, materia, dia_semana, hora_inicio, tolerancia_min, grupo }] }`, solo con lo que el docente imparte.
+
+### Aviso en tiempo real (SSE)
+
+Cuando el registro NFC guarda una asistencia **nueva**, emite `asistencia:registrada`. Entonces el servidor:
+1. Completa la fila con **una sola** consulta, con el mismo formato que la lista.
+2. La envía **solo a las conexiones del docente de esa clase**.
+
+El evento se emite justo después del `INSERT`, así que llega a la web en milisegundos. En las pruebas, el tiempo se mide de punta a punta y debe ser menor que los 5 s de RNF-01. Las lecturas duplicadas o rechazadas no envían nada.
+
+**Eventos del flujo:**
+
+| Evento | Cuándo | Qué hacer en la web |
+|---|---|---|
+| `asistencia` | Una asistencia nueva en una de sus clases. `data` tiene el formato de la lista e `id` es el de la asistencia. | Agregarla a la tabla si coincide con los filtros. |
+| `conectado` | El flujo está listo, después de reenviar lo pendiente. | En una reconexión, volver a cargar la lista. |
+| `sesion_terminada` | La sesión venció o la cuenta ya no es Docente activo. | Cerrar el `EventSource` y mandar al login. |
+
+Además, cada `SSE_LATIDO_SEGUNDOS` llega un comentario (`: latido`), que `EventSource` ignora.
+
+**Si el docente pierde la conexión:**
+- **Reconexión automática:** el servidor envía `retry: 3000`, así que `EventSource` se reconecta solo a los 3 segundos.
+- **Recuperar lo perdido:** al reconectarse, el navegador envía `Last-Event-ID`, y el servidor reenvía en orden las asistencias posteriores de **sus** clases, como máximo 100 y de la última hora.
+  - Es una ayuda, **no una garantía**: dos inserciones simultáneas pueden confirmarse en un orden distinto al de sus ids.
+  - Por eso, **la lista es la fuente de verdad**: al recibir `conectado` después de una reconexión, la web debe volver a cargarla.
+- **Revalidación de la sesión:** en cada latido se revisa que el token siga vigente y que la cuenta siga activa y con rol Docente. Si no, llega `sesion_terminada` y se cierra el flujo. Si el navegador intenta reconectarse, recibe `401` y `EventSource` deja de intentarlo.
+
+**Varias pestañas:**
+- **Una conexión por pestaña:** cada pestaña abre la suya y todas reciben los eventos.
+- **Límite por docente:** máximo `SSE_MAX_CONEXIONES_DOCENTE` conexiones (5 por defecto). La siguiente recibe `429`, y los lugares se liberan al cerrar pestañas.
+- **Límite del navegador:** con HTTP/1.1, el navegador permite unas **6 conexiones por sitio** sumando todas las pestañas, así que muchas pestañas abiertas pueden bloquear las demás peticiones. Hay dos soluciones:
+  - En producción, servir la API con **HTTP/2** detrás del proxy.
+  - En el frontend, abrir una sola conexión y compartirla entre pestañas con `BroadcastChannel`.
+- **Proxy Nginx:** la respuesta envía `X-Accel-Buffering: no` para que Nginx no retenga los eventos.
+
+**Una sola instancia:** las conexiones viven en la memoria del proceso. Con varias instancias del servidor haría falta Redis pub/sub o `LISTEN/NOTIFY` de PostgreSQL. Al apagar el servidor, `cerrarConexionesTiempoReal()` cierra todos los flujos para que `server.close()` no se quede esperando.
+
+**Ejemplo para el frontend** (mismo origen; la cookie de sesión viaja sola):
+
+```js
+const fuente = new EventSource('/api/asistencias/eventos');
+let reconectando = false;
+
+fuente.addEventListener('conectado', () => {
+  if (reconectando) recargarLista(); // la lista es la fuente de verdad
+  reconectando = true;
+});
+fuente.addEventListener('asistencia', (e) => agregarFila(JSON.parse(e.data)));
+fuente.addEventListener('sesion_terminada', () => {
+  fuente.close();
+  location.href = '/login';
+});
+```
+
+Si el frontend vive en otro origen, usa `new EventSource(url, { withCredentials: true })` y configura CORS con credenciales.
+
 ## Decisiones técnicas
 
 - **Node 24 LTS, Express 5 y TypeScript.** Express 5 propaga solo los errores de los handlers `async`, así que no hacen falta envoltorios. Las capas están separadas en `routes`, `controller`, `service` y `schemas` por módulo.
@@ -591,6 +719,7 @@ src/
   eventos/eventos.ts         EventEmitter tipado (asistencia:registrada)
   middleware/                requiereSesion, requiereRol, requiereDispositivo,
                              limiteIntentos, limiteDispositivo, manejoErrores
+  modules/asistencias/       routes, controller, service, schemas (P2) y tiempoReal.ts (SSE)
   modules/auth/              routes, controller, service, schemas, types
   modules/bitacora/          service: escribe en la bitácora dentro de una transacción
   modules/dispositivos/      service: autenticación y última conexión de los lectores
@@ -599,18 +728,23 @@ src/
   modules/lecturas/          routes, controller, service, schemas y tiempo.ts (funciones puras)
   types/express.d.ts         tipos de req.usuario y req.dispositivo
   utils/                     HttpError, contrasena (argon2), sesion (JWT y cookie), uid,
-                             erroresPg (traduce errores de PostgreSQL y los limpia para el log)
+                             erroresPg (traduce errores de PostgreSQL y los limpia para el log),
+                             validacion (validar con zod y paginación compartida)
   app.ts                     arma la app de Express (la usan el servidor y las pruebas)
   server.ts                  punto de entrada
 tests/                       pruebas unitarias y de integración
 ```
 
-Cada módulo nuevo (`asistencias`, `estadisticas`) va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
+Cada módulo nuevo (por ejemplo, `estadisticas`) va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
 
 ## Pendientes
 
 - **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
-- Fuera del alcance por ahora: el firmware del ESP32, las consultas de asistencias para docentes, las estadísticas, la exportación PDF/XLSX, el transporte del aviso en tiempo real (WebSocket o SSE) y el frontend.
+- Fuera del alcance por ahora: el firmware del ESP32, las estadísticas, la exportación PDF/XLSX y el frontend.
+- **Consulta de asistencias, siguientes pasos:**
+  - **Faltas:** el modelo solo guarda «Asistencia» y «Retardo». Calcular quién **no** registró en una clase encaja mejor con las estadísticas.
+  - Un selector con los estudiantes de un grupo para el filtro por estudiante.
+  - **SSE con varias instancias del servidor:** hoy las conexiones y el `EventEmitter` viven en un solo proceso. Con más de una instancia haría falta Redis pub/sub o `LISTEN/NOTIFY` de PostgreSQL.
 - **Gestión de estudiantes, siguientes pasos:**
   - Editar los datos de un estudiante.
   - Reactivar a un estudiante dado de baja.
