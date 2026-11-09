@@ -9,6 +9,10 @@ export const pool = new pg.Pool({
   password: env.PGPASSWORD,
   database: baseDatos,
   max: 10,
+  // Cada sesión usa la zona horaria de la escuela, para que current_date y
+  // los ::date en SQL (p. ej. las fechas de inscripcion_grupo) sean el día de
+  // la escuela y no el del servidor de base de datos.
+  options: `-c timezone=${env.ZONA_HORARIA_ESCUELA}`,
 });
 
 pool.on('error', (error) => {
