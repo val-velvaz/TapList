@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
 import { HttpError } from '../../utils/HttpError.js';
-import { esquemaConsulta, esquemaIdEstudiante } from './estudiantes.schemas.js';
-import { historialCredenciales, listarEstudiantes, obtenerEstudiante } from './estudiantes.service.js';
+import { esquemaAlta, esquemaConsulta, esquemaIdEstudiante } from './estudiantes.schemas.js';
+import { darDeAlta, historialCredenciales, listarEstudiantes, obtenerEstudiante } from './estudiantes.service.js';
 
 /** Valida con zod y lanza 400 con un mensaje por campo (el primero que falló). */
 export function validar<T extends z.ZodType>(esquema: T, datos: unknown, mensaje: string): z.infer<T> {
@@ -34,4 +34,11 @@ export async function detalle(req: Request, res: Response): Promise<void> {
   const estudiante = await obtenerEstudiante(id);
   if (!estudiante) throw new HttpError(404, 'El estudiante no existe');
   res.json({ estudiante, historial_credenciales: await historialCredenciales(id) });
+}
+
+/** POST /api/estudiantes (P5): alta, con vinculación opcional de credencial. */
+export async function alta(req: Request, res: Response): Promise<void> {
+  const datos = validar(esquemaAlta, req.body ?? {}, 'Datos del estudiante inválidos');
+  const estudiante = await darDeAlta(datos, req.usuario!.id);
+  res.status(201).location(`/api/estudiantes/${estudiante.id}`).json({ estudiante });
 }

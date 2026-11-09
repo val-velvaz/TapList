@@ -1,4 +1,39 @@
 import { z } from 'zod';
+import { esquemaUid } from '../lecturas/lecturas.schemas.js';
+
+/** Texto con mensajes propios si falta o no es texto (respetando género y número). */
+const texto = (siFalta: string, siNoEsTexto: string) =>
+  z.string({ error: (i) => (i.input === undefined ? siFalta : siNoEsTexto) });
+
+/** POST /api/estudiantes (P5). Con `uid`, el alta y la vinculación son todo o nada. */
+export const esquemaAlta = z.object({
+  matricula: texto('La matrícula es obligatoria', 'La matrícula debe ser texto')
+    .trim()
+    .toUpperCase()
+    .regex(/^[0-9A-Z]{5,20}$/, 'La matrícula debe tener de 5 a 20 letras o números'),
+  nombre: texto('El nombre es obligatorio', 'El nombre debe ser texto')
+    .trim()
+    .min(1, 'El nombre es obligatorio')
+    .max(100, 'El nombre es demasiado largo'),
+  apellidos: texto('Los apellidos son obligatorios', 'Los apellidos deben ser texto')
+    .trim()
+    .min(1, 'Los apellidos son obligatorios')
+    .max(150, 'Los apellidos son demasiado largos'),
+  correo: texto('El correo es obligatorio', 'El correo debe ser texto')
+    .trim()
+    .toLowerCase()
+    .min(1, 'El correo es obligatorio')
+    .max(254, 'El correo es demasiado largo')
+    .pipe(z.email('El correo no tiene un formato válido')),
+  id_grupo: z
+    .number({ error: (i) => (i.input === undefined ? 'El grupo es obligatorio' : 'id_grupo debe ser un número') })
+    .int('id_grupo debe ser un entero')
+    .positive('id_grupo inválido')
+    .max(2_147_483_647, 'id_grupo inválido'),
+  uid: esquemaUid.optional(),
+});
+
+export type DatosAlta = z.infer<typeof esquemaAlta>;
 
 const booleanoEnQuery = (campo: string) =>
   z.enum(['true', 'false'], { error: `${campo} debe ser true o false` }).transform((v) => v === 'true');

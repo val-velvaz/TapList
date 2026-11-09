@@ -1,6 +1,14 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../../db/pool.js';
-import type { FiltrosConsulta } from './estudiantes.schemas.js';
+import { conTransaccion } from '../../db/transaccion.js';
+import { esViolacionLlaveForanea, esViolacionUnica } from '../../utils/erroresPg.js';
+import { HttpError } from '../../utils/HttpError.js';
+import { registrarEnBitacora } from '../bitacora/bitacora.service.js';
+import type { DatosAlta, FiltrosConsulta } from './estudiantes.schemas.js';
+
+export const MENSAJE_MATRICULA_DUPLICADA = 'Ya existe un estudiante con esa matrícula';
+export const MENSAJE_UID_ASIGNADO = 'Esa credencial ya está asignada';
+export const MENSAJE_YA_TIENE_CREDENCIAL = 'El estudiante ya tiene una credencial activa; usa reemplazar';
 
 // En las consultas de este módulo el UID se enmascara dentro del SQL, así
 // que el UID completo nunca sale de la base hacia la aplicación (RNF-06).
@@ -164,4 +172,70 @@ export async function historialCredenciales(idEstudiante: number): Promise<Crede
     activa: f.activa,
     fecha_asignacion: f.fecha_asignacion.toISOString(),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Operaciones de escritura. Todas corren en una transacción y escriben en la
+// bitácora con el mismo cliente: si la bitácora falla, el cambio se revierte.
+// Los duplicados los detectan los UNIQUE de la base (no un SELECT previo, que
+// tendría condición de carrera) y se traducen a 409.
+// ---------------------------------------------------------------------------
+
+/**
+ * Inserta una credencial activa para el estudiante. La comparten el alta con
+ * UID, la vinculación y el reemplazo (y, más adelante, el modo registro).
+ * Devuelve el id de la credencial nueva.
+ */
+export async function insertarCredencial(cliente: PoolClient, idEstudiante: number, uid: string): Promise<number> {
+  try {
+    const { rows } = await cliente.query<{ id_credencial: number }>(
+      `INSERT INTO credencial_nfc (uid, id_estudiante, activa)
+       VALUES ($1, $2, true)
+       RETURNING id_credencial`,
+      [uid, idEstudiante],
+    );
+    return rows[0]!.id_credencial;
+  } catch (error) {
+    // El UID es único en toda la tabla, también entre credenciales reemplazadas o dadas de baja.
+    if (esViolacionUnica(error, 'uq_credencial_nfc_uid')) throw new HttpError(409, MENSAJE_UID_ASIGNADO);
+    if (esViolacionUnica(error, 'uq_credencial_nfc_estudiante_activa')) {
+      throw new HttpError(409, MENSAJE_YA_TIENE_CREDENCIAL);
+    }
+    throw error;
+  }
+}
+
+/** Alta de un estudiante (P5). Con `uid`, también vincula la credencial: todo o nada. */
+export async function darDeAlta(datos: DatosAlta, idUsuario: number): Promise<EstudiantePublico> {
+  return conTransaccion(async (cliente) => {
+    let idEstudiante: number;
+    try {
+      const { rows } = await cliente.query<{ id_estudiante: number }>(
+        `INSERT INTO estudiante (matricula, nombre, apellidos, correo, id_grupo)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id_estudiante`,
+        [datos.matricula, datos.nombre, datos.apellidos, datos.correo, datos.id_grupo],
+      );
+      idEstudiante = rows[0]!.id_estudiante;
+    } catch (error) {
+      if (esViolacionUnica(error, 'uq_estudiante_matricula')) throw new HttpError(409, MENSAJE_MATRICULA_DUPLICADA);
+      if (esViolacionLlaveForanea(error, 'fk_estudiante_grupo')) {
+        throw new HttpError(400, 'Datos del estudiante inválidos', { id_grupo: 'El grupo no existe' });
+      }
+      throw error;
+    }
+    await registrarEnBitacora(cliente, idUsuario, 'ALTA_ESTUDIANTE', `estudiante#${idEstudiante}`);
+
+    if (datos.uid) {
+      const idCredencial = await insertarCredencial(cliente, idEstudiante, datos.uid);
+      await registrarEnBitacora(
+        cliente,
+        idUsuario,
+        'VINCULAR_CREDENCIAL',
+        `credencial_nfc#${idCredencial} → estudiante#${idEstudiante}`,
+      );
+    }
+
+    return (await obtenerEstudiante(idEstudiante, cliente))!;
+  });
 }
