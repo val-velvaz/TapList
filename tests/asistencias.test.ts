@@ -233,6 +233,34 @@ describe('Lista de asistencias (P2)', () => {
     }
   });
 
+  it('un estudiante que cambió de grupo se puede filtrar si tiene asistencias en sus clases', async () => {
+    // Tomó Materia A1 en GA y después lo cambiaron al grupo GB (del docente B).
+    const { id_estudiante: idMovido } = await insertar<{ id_estudiante: number }>(
+      `INSERT INTO estudiante (matricula, nombre, apellidos, correo, id_grupo)
+       VALUES ($1, 'Movido', 'Prueba', $2, $3) RETURNING id_estudiante`,
+      [`EMOV${sufijo}`.toUpperCase(), `emov.${sufijo}@alumnos.udg.mx`, ids.GA],
+    );
+    const { id_asistencia: idHistorica } = await insertar<{ id_asistencia: number }>(
+      `INSERT INTO asistencia (id_estudiante, id_clase, id_dispositivo, fecha, hora, estado)
+       VALUES ($1, $2, $3, '2026-09-28', '07:04', 'Asistencia') RETURNING id_asistencia`,
+      [idMovido, ids.A1, ID_DISPOSITIVO],
+    );
+    await pool.query('UPDATE estudiante SET id_grupo = $1 WHERE id_estudiante = $2', [ids.GB, idMovido]);
+
+    // Docente A: ya no es de sus grupos, pero tiene historial en sus clases.
+    const a = await consultar(cookies.A, { id_estudiante: idMovido });
+    expect(a.status).toBe(200);
+    expect(a.body.datos.map((x: { id: number }) => x.id)).toEqual([idHistorica]);
+
+    // Docente B: es de su grupo actual, aunque aún no tenga asistencias con él.
+    const b = await consultar(cookies.B, { id_estudiante: idMovido });
+    expect(b.status).toBe(200);
+    expect(b.body.total).toBe(0);
+
+    // Sin ninguna de las dos condiciones sigue siendo 404 (EB1 nunca tuvo clases de A).
+    expect((await consultar(cookies.A, { id_estudiante: ids.EB1 })).status).toBe(404);
+  });
+
   it('valida los parámetros con 400', async () => {
     const res = await consultar(cookies.A, { estado: 'Falta', desde: '2026-02-30', por_pagina: 0 });
     expect(res.status).toBe(400);

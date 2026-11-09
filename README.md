@@ -184,7 +184,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 119 pruebas en cinco archivos:
+Hay 120 pruebas en cinco archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -192,7 +192,7 @@ Hay 119 pruebas en cinco archivos:
 | `tests/tiempo.test.ts` | 22 | Unitarias de las funciones puras de tiempo: zona horaria, medianoche, domingo, ventana de la clase y estado. |
 | `tests/lecturas.test.ts` | 24 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
 | `tests/estudiantes.test.ts` | 37 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
-| `tests/asistencias.test.ts` | 17 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
+| `tests/asistencias.test.ts` | 18 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
 
 En las pruebas, `SSE_LATIDO_SEGUNDOS` vale `0.5` (en `vitest.config.ts`) para comprobar en segundos el cierre por sesión terminada.
 
@@ -263,6 +263,7 @@ Para la reversión, las pruebas llaman al servicio con el id de un Docente. El t
 | Administrador / sin sesión en los 3 endpoints | `403` / `401` |
 | Docente A y docente B | Cada uno ve solo las asistencias de sus clases, ordenadas de la más reciente a la más antigua |
 | Filtro por la clase, el grupo o un estudiante del otro docente | `404`, con la misma respuesta que un id inexistente |
+| Estudiante que cambió de grupo | Su antiguo docente lo filtra y ve su historial; el nuevo también lo filtra (sin asistencias aún); sin ninguna de las dos condiciones, `404` |
 | Filtros por clase, grupo, estudiante, estado y fechas, solos y combinados | Totales correctos; `desde` y `hasta` incluidos |
 | Paginación | `total`, `total_paginas` y página fuera de rango vacía |
 | Validación | `400` por campo; `hasta` anterior a `desde` |
@@ -544,8 +545,10 @@ Pantalla P2 y diagrama de actividades AD-04. Todo el módulo exige `requiereSesi
 - Si un filtro apunta a algo que el docente no imparte, la respuesta es **`404`, no `403`**, y es idéntica a la de un id inexistente. Así no se revela que el recurso existe. Aplica a:
   - `id_clase`: una clase de otro docente.
   - `id_grupo`: un grupo donde no tiene clases.
-  - `id_estudiante`: un estudiante cuyo grupo **actual** no tiene clases suyas.
-- **Estudiante que cambió de grupo:** sus asistencias anteriores en las clases del docente siguen apareciendo en la lista sin filtro. Lo que no funciona es filtrar por su `id_estudiante` (responde `404`), porque esa regla mira su grupo actual.
+  - `id_estudiante`: un estudiante que no cumple **ninguna** de estas dos condiciones:
+    - Pertenece hoy a uno de sus grupos.
+    - Tiene al menos una asistencia en alguna de sus clases.
+- **Estudiante que cambió de grupo:** su antiguo docente puede seguir filtrando por él, porque tiene asistencias en sus clases, y su nuevo docente también, porque es de su grupo actual, aunque todavía no tenga asistencias con él.
 
 ### Lista (P2)
 

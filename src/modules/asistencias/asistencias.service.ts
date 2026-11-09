@@ -92,10 +92,15 @@ async function verificarFiltrosPropios(idDocente: number, filtros: FiltrosAsiste
     );
   }
   if (filtros.id_estudiante) {
-    // Un estudiante es "suyo" si su grupo actual tiene alguna clase del docente.
+    // Un estudiante es "suyo" si hoy pertenece a un grupo donde el docente
+    // imparte alguna clase, o si tiene al menos una asistencia en una de sus
+    // clases (p. ej. un estudiante que cambió de grupo conserva su historial).
     await verificar(
-      `SELECT 1 FROM estudiante e JOIN clase c ON c.id_grupo = e.id_grupo
-        WHERE e.id_estudiante = $1 AND c.id_docente = $2 LIMIT 1`,
+      `SELECT 1 FROM estudiante e
+        WHERE e.id_estudiante = $1
+          AND (EXISTS (SELECT 1 FROM clase c WHERE c.id_grupo = e.id_grupo AND c.id_docente = $2)
+               OR EXISTS (SELECT 1 FROM asistencia a JOIN clase c ON c.id_clase = a.id_clase
+                           WHERE a.id_estudiante = e.id_estudiante AND c.id_docente = $2))`,
       filtros.id_estudiante,
       'El estudiante no existe',
     );
