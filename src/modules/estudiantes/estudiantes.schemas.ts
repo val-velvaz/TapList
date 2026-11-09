@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { camposPaginacion, idEnQuery } from '../../utils/validacion.js';
 import { esquemaUid } from '../lecturas/lecturas.schemas.js';
 
 /** Texto con mensajes propios si falta o no es texto (respetando género y número). */
@@ -40,20 +41,14 @@ const booleanoEnQuery = (campo: string) =>
 
 /** GET /api/estudiantes (P4). */
 export const esquemaConsulta = z.object({
-  pagina: z.coerce.number({ error: 'pagina debe ser un número' }).int().min(1, 'pagina empieza en 1').default(1),
-  por_pagina: z.coerce
-    .number({ error: 'por_pagina debe ser un número' })
-    .int()
-    .min(1, 'por_pagina debe ser al menos 1')
-    .max(100, 'por_pagina no puede ser mayor que 100')
-    .default(20),
+  ...camposPaginacion,
   q: z
     .string({ error: 'q debe ser texto' })
     .trim()
     .max(100, 'q es demasiado largo')
     .optional()
     .transform((v) => v || undefined),
-  id_grupo: z.coerce.number({ error: 'id_grupo debe ser un número' }).int().positive('id_grupo inválido').optional(),
+  id_grupo: idEnQuery('id_grupo').optional(),
   con_credencial: booleanoEnQuery('con_credencial').optional(),
   estado: z
     .enum(['activos', 'inactivos', 'todos'], { error: 'estado debe ser activos, inactivos o todos' })

@@ -3,6 +3,7 @@ import { pool } from '../../db/pool.js';
 import { conTransaccion } from '../../db/transaccion.js';
 import { esViolacionLlaveForanea, esViolacionUnica } from '../../utils/erroresPg.js';
 import { HttpError } from '../../utils/HttpError.js';
+import { armarPagina, type Pagina } from '../../utils/validacion.js';
 import { registrarEnBitacora } from '../bitacora/bitacora.service.js';
 import type { DatosAlta, FiltrosConsulta } from './estudiantes.schemas.js';
 
@@ -33,13 +34,7 @@ export interface EstudiantePublico {
   credencial: CredencialPublica | null;
 }
 
-export interface PaginaEstudiantes {
-  datos: EstudiantePublico[];
-  pagina: number;
-  por_pagina: number;
-  total: number;
-  total_paginas: number;
-}
+export type PaginaEstudiantes = Pagina<EstudiantePublico>;
 
 interface FilaEstudiante {
   id_estudiante: number;
@@ -132,13 +127,7 @@ export async function listarEstudiantes(filtros: FiltrosConsulta): Promise<Pagin
     parametros,
   );
 
-  return {
-    datos: rows.map(aEstudiantePublico),
-    pagina: filtros.pagina,
-    por_pagina: filtros.por_pagina,
-    total,
-    total_paginas: Math.ceil(total / filtros.por_pagina),
-  };
+  return armarPagina(rows.map(aEstudiantePublico), total, filtros.pagina, filtros.por_pagina);
 }
 
 /** Un estudiante con su credencial activa, o null si no existe. */

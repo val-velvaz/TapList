@@ -35,6 +35,10 @@ const esquemaEnv = z.object({
   // Límites de los dispositivos
   DISPOSITIVO_MAX_SOLICITUDES_MINUTO: z.coerce.number().int().positive().default(60),
   DISPOSITIVO_MAX_FALLOS_IP: z.coerce.number().int().positive().default(30),
+
+  // Aviso en tiempo real (SSE)
+  SSE_LATIDO_SEGUNDOS: z.coerce.number().positive().default(25),
+  SSE_MAX_CONEXIONES_DOCENTE: z.coerce.number().int().positive().default(5),
 });
 
 const resultado = esquemaEnv.safeParse(process.env);
