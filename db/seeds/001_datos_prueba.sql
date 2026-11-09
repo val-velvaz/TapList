@@ -56,8 +56,9 @@ FROM (VALUES
 ) AS c (uid, matricula)
 JOIN estudiante s ON s.matricula = c.matricula;
 
--- Dispositivo lector
-INSERT INTO dispositivo (nombre_ubicacion, estado) VALUES
-  ('Módulo X, aula 101', 'Activo');
+-- Dispositivo lector (la clave de prueba está en el README; migración 002)
+INSERT INTO dispositivo (nombre_ubicacion, estado, clave_api_hash) VALUES
+  ('Módulo X, aula 101', 'Activo',
+   '$argon2id$v=19$m=19456,p=1,t=2$iok5VGWAkIMkmVy33MmcEg$Ked/9nRMmdwdmgYn+kHKWsMrJMjS1Jb4Jxkc3vN0CVk');
 
 COMMIT;
