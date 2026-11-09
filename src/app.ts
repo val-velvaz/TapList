@@ -6,6 +6,8 @@ import { manejoErrores, rutaNoEncontrada } from './middleware/manejoErrores.js';
 import { requiereRol } from './middleware/requiereRol.js';
 import { requiereSesion } from './middleware/requiereSesion.js';
 import { rutasAuth } from './modules/auth/auth.routes.js';
+import { rutasEstudiantes } from './modules/estudiantes/estudiantes.routes.js';
+import { rutasGrupos } from './modules/grupos/grupos.routes.js';
 import { rutasLecturas } from './modules/lecturas/lecturas.routes.js';
 
 export function crearApp(): Express {
@@ -18,8 +20,9 @@ export function crearApp(): Express {
 
   app.use('/api/auth', rutasAuth);
   app.use('/api/dispositivo/lecturas', rutasLecturas);
+  app.use('/api/estudiantes', rutasEstudiantes);
+  app.use('/api/grupos', rutasGrupos);
   // Aquí se montarán los módulos siguientes, p. ej.:
-  //   app.use('/api/estudiantes', rutasEstudiantes);
   //   app.use('/api/asistencias', rutasAsistencias);
 
   if (env.NODE_ENV === 'test') {
