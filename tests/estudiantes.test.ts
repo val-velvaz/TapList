@@ -299,7 +299,7 @@ describe('Alta (P5)', () => {
       apellidos: 'Los apellidos son obligatorios',
       correo: 'El correo no tiene un formato válido',
       id_grupo: 'id_grupo debe ser un número',
-      uid: 'El UID debe ser hexadecimal de 8 a 20 caracteres',
+      uid: 'El UID debe ser hexadecimal de 4, 7 o 10 bytes (8, 14 o 20 caracteres)',
     });
   });
 });
@@ -347,6 +347,29 @@ describe('Vincular credencial (AD-06)', () => {
 
     await admin.post(`/api/estudiantes/${estudiante.id}/credencial`).send({ uid: nuevoUid() }).expect(409);
     await admin.post('/api/estudiantes/999999/credencial').send({ uid: nuevoUid() }).expect(404);
+  });
+
+  it('acepta UID de 4, 7 y 10 bytes, y rechaza el decimal, los ceros perdidos y el truncado sin vincular nada', async () => {
+    for (const bytes of [4, 7, 10]) {
+      const uid = hex(bytes);
+      const { id } = await crearEstudiante();
+      const res = await admin.post(`/api/estudiantes/${id}/credencial`).send({ uid: uid.toLowerCase().match(/../g)!.join(':') });
+      expect(res.status, `${bytes} bytes`).toBe(201);
+      sinUidCompleto(res.body, uid);
+      const { rows } = await pool.query<{ uid: string }>('SELECT uid FROM credencial_nfc WHERE id_estudiante = $1', [id]);
+      expect(rows).toEqual([{ uid }]);
+    }
+
+    const { id } = await crearEstudiante();
+    // Decimal de 10 dígitos de un lector USB, un cero perdido y un UID de 7 bytes cortado a 6.
+    for (const uid of ['0077705923', '4A1B2C3', '041122334455']) {
+      const res = await admin.post(`/api/estudiantes/${id}/credencial`).send({ uid });
+      expect(res.status, uid).toBe(400);
+      expect(res.body.detalles.uid).toBe('El UID debe ser hexadecimal de 4, 7 o 10 bytes (8, 14 o 20 caracteres)');
+      expect((await admin.put(`/api/estudiantes/${id}/credencial`).send({ uid })).status, uid).toBe(400);
+    }
+    const { rows } = await pool.query('SELECT 1 FROM credencial_nfc WHERE id_estudiante = $1', [id]);
+    expect(rows).toHaveLength(0);
   });
 
   it('dos vinculaciones simultáneas del mismo UID dejan una sola credencial', async () => {

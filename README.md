@@ -188,17 +188,18 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 149 pruebas en siete archivos:
+Hay 176 pruebas en ocho archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
 | `tests/auth.test.ts` | 19 | Inicio y cierre de sesión, `me`, roles y límite de intentos. |
 | `tests/tiempo.test.ts` | 22 | Unitarias de las funciones puras de tiempo: zona horaria, medianoche, domingo, ventana de la clase y estado. |
-| `tests/lecturas.test.ts` | 24 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
-| `tests/estudiantes.test.ts` | 37 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
+| `tests/lecturas.test.ts` | 26 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
+| `tests/estudiantes.test.ts` | 38 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
 | `tests/asistencias.test.ts` | 18 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
 | `tests/estadisticas.test.ts` | 19 | Estadísticas con un mes de datos fijos y resultados calculados a mano, y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
 | `tests/orden.test.ts` | 10 | Orden alfabético en español de todas las listas (P2, P3, P4, P5, XLSX y PDF) con la base en configuración «C»: acentos, «ñ», minúsculas y empates en «más faltas». |
+| `tests/uid.test.ts` | 24 | Formato canónico del UID: lo que `esquemaUid` acepta (4, 7 y 10 bytes con mayúsculas, minúsculas, espacios y dos puntos) y lo que rechaza (decimal, ceros perdidos, truncado), y el análisis de `npm run uid:revisar`. |
 
 En las pruebas, `vitest.config.ts` cambia dos valores:
 - `SSE_LATIDO_SEGUNDOS` vale `0.5`, para comprobar en segundos el cierre por sesión terminada.
@@ -239,7 +240,7 @@ Además se prueban el flujo completo `login → me → logout → me (401)`, que
 | 15 | `ultima_conexion` | Se actualiza al autenticarse, aunque la lectura se rechace, y no con una clave incorrecta |
 | 16 | UID en minúsculas, con dos puntos o con espacios | Se normaliza y encuentra la credencial |
 
-Además se prueban UID con formato inválido (`400`), una falla simulada al guardar (`500` «No se pudo guardar»), el límite de 60 solicitudes por minuto (`429`), que el evento se emite una vez por registro nuevo y sin el UID, que un oyente con errores no afecta la respuesta, y que la respuesta llega en menos de 500 ms.
+Además se prueban UID con formato inválido (`400`), incluidos el decimal de 10 dígitos, los ceros perdidos y el UID truncado, que los UID bien formados de 4, 7 y 10 bytes se aceptan, una falla simulada al guardar (`500` «No se pudo guardar»), el límite de 60 solicitudes por minuto (`429`), que el evento se emite una vez por registro nuevo y sin el UID, que un oyente con errores no afecta la respuesta, y que la respuesta llega en menos de 500 ms.
 
 ### Gestión de estudiantes (`estudiantes.test.ts`)
 
@@ -331,6 +332,25 @@ El encabezado de la prueba tiene los datos y el orden esperado junto al orden in
 
 Para confirmar que detectan el error, se quitó a propósito la colación de `ORDEN_ES`: fallaron 10 pruebas (9 de este archivo y la de paginación de `estudiantes.test.ts`).
 
+### Formato del UID (`uid.test.ts`)
+
+Son pruebas unitarias, sin base de datos, de `esquemaUid` (la validación que comparten las lecturas y la vinculación) y de las funciones de `npm run uid:revisar`.
+
+| Caso | Resultado esperado |
+|---|---|
+| UID de 4, 7 y 10 bytes en mayúsculas, minúsculas, con dos puntos, con espacios y con espacios alrededor | Se aceptan y dan el mismo formato canónico |
+| 3, 5, 6, 8, 9 y 11 bytes | Se rechazan |
+| Longitud impar (un cero perdido) | Se rechaza |
+| Decimal de 10 dígitos y de otras longitudes inválidas | Se rechazan |
+| UID de 7 bytes truncado a 5 o 6 | Se rechaza |
+| Letras fuera de A-F, guiones, comas, puntos, `0x`, vacío y valores que no son texto | Se rechazan |
+| `analizarUid` | Coincide con la API en qué es válido; avisa del posible decimal y muestra su equivalente, del UID aleatorio (`08…`), de la etiqueta de cascada (`88…`) y de las lecturas fallidas |
+| `compararUids` | Reconoce iguales, bytes invertidos, decimal, ceros perdidos, truncado y distintos |
+
+La integración se prueba en `lecturas.test.ts` (los valores mal formados responden `400` sin registro) y en `estudiantes.test.ts` (se vinculan credenciales de 4, 7 y 10 bytes, y los mal formados no vinculan nada).
+
+Para confirmar que detectan el error, se regresó a propósito a la longitud amplia (de 8 a 20 caracteres): fallaron 9 pruebas en los tres archivos.
+
 ## API de autenticación
 
 Todas las respuestas son JSON y llevan `Cache-Control: no-store`.
@@ -390,7 +410,7 @@ router.get('/', requiereSesion, requiereRol('Docente', 'Administrador'), listarA
 
 El ESP32 lee la credencial y envía el UID a `POST /api/dispositivo/lecturas`. La API decide todo y responde con el resultado que el lector debe mostrar.
 
-El contrato completo para quien programe el firmware (cabeceras, cuerpos, respuestas, señales, *timeout* y cola sin conexión) está en **[docs/contrato-dispositivo.md](docs/contrato-dispositivo.md)**.
+El contrato completo para quien programe el firmware (cabeceras, cuerpos, respuestas, señales, *timeout* y cola sin conexión) está en **[docs/contrato-dispositivo.md](docs/contrato-dispositivo.md)**. La guía para organizar el firmware, conectar el lector y probarlo está en **[docs/guia-firmware.md](docs/guia-firmware.md)**.
 
 | Respuesta | Señal |
 |---|---|
@@ -448,6 +468,34 @@ Si el ESP32 pierde la conexión, guarda la lectura con su hora local y la reenv�
 `src/eventos/eventos.ts` exporta un `EventEmitter` tipado. Cada asistencia **nueva** emite `asistencia:registrada` con `idAsistencia`, `idEstudiante`, `idClase`, `idDispositivo`, `fecha`, `hora` y `estado`, **sin el UID**. Los duplicados y los rechazos no emiten. Si un oyente lanza un error, se registra en el log y no afecta la respuesta al dispositivo.
 
 El aviso en tiempo real a la web (RNF-01) se suscribe a este evento, sin tocar el módulo de lecturas. Ver [Aviso en tiempo real](#aviso-en-tiempo-real-sse).
+
+### Formato canónico del UID y cambio de lector
+
+- **Lector previsto: RC522 (MFRC522), sin confirmar.** El equipo podría terminar usando un PN532 u otro módulo.
+- **El servidor no depende del modelo del lector.** Solo conoce el UID en un formato único, definido en [`docs/contrato-dispositivo.md`](docs/contrato-dispositivo.md#formato-canónico-del-uid): hexadecimal en mayúsculas, sin separadores, con los bytes en el orden de la anticolisión, de 4, 7 o 10 bytes.
+- **Cambiar de lector solo afecta a la capa del lector en el firmware.** [`docs/guia-firmware.md`](docs/guia-firmware.md) explica cómo separarla (una interfaz de dos funciones y una implementación por modelo), las conexiones, qué tarjetas lee cada lector y la lista de pruebas con el circuito. El firmware lo programa el equipo en `firmware/`.
+- **La API rechaza con `400` las longitudes que no son de 4, 7 o 10 bytes** (`PATRON_UID` en `src/utils/uid.ts`). Antes aceptaba cualquier longitud de 8 a 20 caracteres, y con eso pasaban el decimal de 10 dígitos de los lectores USB, los valores con un cero perdido y los UID truncados a 5 o 6 bytes. La restricción de la base (`ck_credencial_nfc_uid`, de 8 a 20 caracteres) no cambió: no hizo falta una migración.
+- **Lo que la API no puede detectar:** un UID con los bytes invertidos, truncado a 4 bytes exactos o en decimal de 8, 14 o 20 dígitos tiene un formato válido. La lectura sale `RECHAZADA` porque no coincide con la credencial. Para eso está la herramienta de abajo.
+
+### Revisar el formato de un UID
+
+```bash
+npm run uid:revisar -- 04:a1:b2:c3
+npm run uid:revisar -- 0077705923 --comparar 04A1B2C3
+```
+
+Muestra el formato canónico y si la API lo aceptaría, y avisa si el valor parece decimal, aleatorio (`08…`) o a media lectura (`88…`). Con `--comparar`, dice si los dos valores son la misma tarjeta con otro formato:
+
+```
+Valor: 0077705923
+  ❌ La API lo rechazaría (400):
+     - Tiene 5 bytes (10 caracteres). Un UID tiene 4, 7 o 10 bytes (8, 14 o 20 caracteres).
+  ⚠️  Solo tiene dígitos: puede ser un UID en DECIMAL, como lo entregan muchos lectores USB. […]
+
+Comparación: ⚠️  Son la misma tarjeta, pero uno está en DECIMAL y el otro en hexadecimal. […]
+```
+
+Reconoce los bytes invertidos, el decimal, los ceros perdidos y el UID truncado. No se conecta a la API ni a la base y no guarda nada. Muestra el UID completo en la terminal, así que es para tarjetas de prueba (RNF-06). Termina con código `0` solo si el valor es válido y, con `--comparar`, si los dos son iguales.
 
 ### Simulador
 
@@ -528,8 +576,8 @@ Las respuestas de este módulo usan `snake_case` (`total_paginas`, `uid_enmascar
 
 En esta versión, el UID se **captura en la pantalla P5**. El campo se puede escribir a mano o llenar con un **lector NFC USB de escritorio que funciona como teclado**: el administrador pulsa «Leer tarjeta», acerca la tarjeta y el lector «escribe» el UID.
 
-- **El UID se valida y normaliza igual que en las lecturas del ESP32** (`esquemaUid`): hexadecimal de 8 a 20 caracteres, sin espacios ni dos puntos y en mayúsculas.
-- ⚠️ **Configura el lector USB para que entregue el UID en hexadecimal y con los bytes en el mismo orden que el ESP32.** Muchos lectores USB entregan, por defecto, el UID en decimal o con los bytes invertidos. Si no coincide, la credencial se vincula, pero las lecturas en el aula salen `RECHAZADA`. Para verificarlo, vincula una tarjeta y pásala por un lector del aula o por el simulador.
+- **El UID se valida y normaliza igual que en las lecturas del ESP32** (`esquemaUid`), al [formato canónico](#formato-canónico-del-uid-y-cambio-de-lector): hexadecimal de 4, 7 o 10 bytes (8, 14 o 20 caracteres), sin espacios ni dos puntos y en mayúsculas. Un decimal de 10 dígitos, como el que entregan muchos lectores USB, responde `400`.
+- ⚠️ **Configura el lector USB para que entregue el UID en hexadecimal y con los bytes en el mismo orden que el ESP32.** Muchos lectores USB entregan, por defecto, el UID en decimal o con los bytes invertidos. Si no coincide, la credencial se vincula, pero las lecturas en el aula salen `RECHAZADA`. Para verificarlo **antes de vincular credenciales reales**, compara lo que entregan los dos lectores para la misma tarjeta con `npm run uid:revisar -- <del lector USB> --comparar <del ESP32>`.
 - **Siguiente versión, el «modo registro» del ESP32:** la API dejaría pendiente la vinculación unos segundos y la siguiente tarjeta leída en un lector de registro dedicado se vincularía sola. Así, el formato siempre coincide y el UID completo nunca pasa por la web. La lógica ya está en una sola función, `insertarCredencial`, que el modo registro podrá reutilizar.
 
 ### Reemplazar una credencial perdida o dañada
@@ -857,10 +905,12 @@ db/
   seeds/001_datos_prueba.sql
   preparar-base.ts           crea la BD, aplica migraciones y semilla
 docs/contrato-dispositivo.md contrato de la API para el firmware del ESP32
+docs/guia-firmware.md        guía del firmware: capa del lector, conexiones y pruebas
 scripts/
   db-setup.ts                npm run db:setup
   dispositivo-clave.ts       npm run dispositivo:clave
   simular-lectura.ts         npm run simular:lectura
+  uid-revisar.ts             npm run uid:revisar
 src/
   config/env.ts              variables de entorno validadas con zod
   db/pool.ts                 pool de conexiones a PostgreSQL
@@ -905,4 +955,5 @@ Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta e
   - Reactivar a un estudiante dado de baja.
   - El **«modo registro» del ESP32** (ver [Cómo llega el UID](#cómo-llega-el-uid-al-vincular)).
   - Una vista de la bitácora para el Administrador.
+- **Lector NFC:** el equipo debe confirmar el modelo (previsto: RC522) y pasar la lista de pruebas de [`docs/guia-firmware.md`](docs/guia-firmware.md) con el circuito, incluida una credencial real de la escuela. Si se usa un lector USB en P5, hay que compararlo antes con `npm run uid:revisar`.
 - La gestión de dispositivos desde la web (alta, baja y rotación de clave con bitácora) todavía no existe; por ahora la clave se asigna con `npm run dispositivo:clave`.
