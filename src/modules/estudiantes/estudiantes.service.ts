@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { ORDEN_ES } from '../../db/orden.js';
 import { pool } from '../../db/pool.js';
 import { conTransaccion } from '../../db/transaccion.js';
 import { esViolacionLlaveForanea, esViolacionUnica } from '../../utils/erroresPg.js';
@@ -122,7 +123,7 @@ export async function listarEstudiantes(filtros: FiltrosConsulta): Promise<Pagin
   const { rows } = await pool.query<FilaEstudiante>(
     `${SELECT_ESTUDIANTE}
      ${where}
-     ORDER BY e.apellidos, e.nombre, e.id_estudiante
+     ORDER BY e.apellidos ${ORDEN_ES}, e.nombre ${ORDEN_ES}, e.id_estudiante
      LIMIT ${limite} OFFSET ${salto}`,
     parametros,
   );

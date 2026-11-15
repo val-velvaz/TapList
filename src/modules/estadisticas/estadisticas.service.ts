@@ -1,4 +1,5 @@
 import { pool } from '../../db/pool.js';
+import { ORDEN_ES } from '../../db/orden.js';
 import { verificarFiltrosPropios } from '../asistencias/asistencias.service.js';
 import type { FiltrosEstadisticas } from './estadisticas.schemas.js';
 
@@ -100,7 +101,7 @@ SELECT
   (SELECT coalesce(json_agg(r ORDER BY r.semana), '[]') FROM (
      SELECT to_char(date_trunc('week', d.fecha), 'YYYY-MM-DD') AS semana, ${CONTEO}
        FROM detalle d GROUP BY date_trunc('week', d.fecha)) r) AS por_semana,
-  (SELECT coalesce(json_agg(r ORDER BY r.grupo->>'nombre', r.clase->>'materia'), '[]') FROM (
+  (SELECT coalesce(json_agg(r ORDER BY r.grupo->>'nombre' ${ORDEN_ES}, r.clase->>'materia' ${ORDEN_ES}, (r.clase->>'id')::int), '[]') FROM (
      SELECT json_build_object('id', c.id_clase, 'materia', c.materia) AS clase,
             json_build_object('id', g.id_grupo, 'nombre', g.nombre) AS grupo,
             ${CONTEO}
@@ -108,7 +109,7 @@ SELECT
        JOIN clases c ON c.id_clase = d.id_clase
        JOIN grupo g ON g.id_grupo = c.id_grupo
       GROUP BY c.id_clase, c.materia, g.id_grupo, g.nombre) r) AS por_clase,
-  (SELECT coalesce(json_agg(r ORDER BY r.faltas DESC, r.retardos DESC, r.estudiante->>'apellidos', r.estudiante->>'nombre'), '[]') FROM (
+  (SELECT coalesce(json_agg(r ORDER BY r.faltas DESC, r.retardos DESC, r.estudiante->>'apellidos' ${ORDEN_ES}, r.estudiante->>'nombre' ${ORDEN_ES}, (r.estudiante->>'id')::int), '[]') FROM (
      SELECT json_build_object('id', e.id_estudiante, 'matricula', e.matricula, 'nombre', e.nombre,
                               'apellidos', e.apellidos, 'activo', e.activo) AS estudiante,
             count(*)::int                                        AS esperados,
@@ -120,7 +121,7 @@ SELECT
        JOIN estudiante e ON e.id_estudiante = d.id_estudiante
       GROUP BY e.id_estudiante
      HAVING count(*) FILTER (WHERE d.estado IS NULL) > 0
-      ORDER BY faltas DESC, retardos DESC, e.apellidos, e.nombre
+      ORDER BY faltas DESC, retardos DESC, e.apellidos ${ORDEN_ES}, e.nombre ${ORDEN_ES}, e.id_estudiante
       LIMIT $6) r) AS estudiantes_con_mas_faltas,
   (SELECT json_build_object('id', g.id_grupo, 'nombre', g.nombre) FROM grupo g WHERE g.id_grupo = $4) AS grupo,
   (SELECT json_build_object('id', c.id_clase, 'materia', c.materia) FROM clase c WHERE c.id_clase = $5) AS clase`;

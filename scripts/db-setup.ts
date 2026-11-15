@@ -18,7 +18,7 @@ if (!nombre) {
 }
 
 try {
-  const ejecutados = await prepararBase(nombre, { reiniciar: esPrueba || args.has('--reset'), sembrar: true });
+  const ejecutados = await prepararBase(nombre, { reiniciar: esPrueba || args.has('--reset'), sembrar: true, colacionC: esPrueba });
   console.log(`Base "${nombre}" lista. Archivos ejecutados:`);
   for (const archivo of ejecutados) console.log(`  - ${archivo}`);
 } catch (error) {

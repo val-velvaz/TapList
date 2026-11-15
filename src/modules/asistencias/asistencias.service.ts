@@ -1,4 +1,5 @@
 import { pool } from '../../db/pool.js';
+import { ORDEN_ES } from '../../db/orden.js';
 import { HttpError } from '../../utils/HttpError.js';
 import { armarPagina, type Pagina } from '../../utils/validacion.js';
 import type { FiltrosAsistencias } from './asistencias.schemas.js';
@@ -161,7 +162,7 @@ export async function filtrosDelDocente(idDocente: number) {
        FROM clase c
        JOIN grupo g ON g.id_grupo = c.id_grupo
       WHERE c.id_docente = $1
-      ORDER BY g.ciclo_escolar DESC, g.nombre, c.dia_semana, c.hora_inicio`,
+      ORDER BY g.ciclo_escolar ${ORDEN_ES} DESC, g.nombre ${ORDEN_ES}, c.dia_semana, c.hora_inicio, c.id_clase`,
     [idDocente],
   );
 
