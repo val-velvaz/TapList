@@ -15,6 +15,7 @@
     "db:setup:test": "tsx scripts/db-setup.ts --test",
     "dispositivo:clave": "tsx scripts/dispositivo-clave.ts",
     "simular:lectura": "tsx scripts/simular-lectura.ts",
+    "uid:revisar": "tsx scripts/uid-revisar.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
