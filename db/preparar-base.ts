@@ -10,6 +10,13 @@ export interface OpcionesPreparacion {
   reiniciar: boolean;
   /** Carga los datos de prueba después de las migraciones. */
   sembrar: boolean;
+  /**
+   * Crea la base con la configuración regional «C» (comparación byte por
+   * byte). La usan las pruebas: así, una consulta que ordene texto sin
+   * `ORDEN_ES` falla en cualquier computadora y en el CI, y no solo en un
+   * servidor que tenga esa configuración.
+   */
+  colacionC?: boolean;
 }
 
 function conexionBase(database: string): pg.ClientConfig {
@@ -49,7 +56,8 @@ export async function prepararBase(nombre: string, opciones: OpcionesPreparacion
       }
       await admin.query(`DROP DATABASE ${nombre} WITH (FORCE)`);
     }
-    await admin.query(`CREATE DATABASE ${nombre} ENCODING 'UTF8' TEMPLATE template0`);
+    const regional = opciones.colacionC ? ` LC_COLLATE 'C' LC_CTYPE 'C'` : '';
+    await admin.query(`CREATE DATABASE ${nombre} ENCODING 'UTF8'${regional} TEMPLATE template0`);
   } finally {
     await admin.end();
   }

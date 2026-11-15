@@ -39,7 +39,7 @@ Falta el frontend, que se construirá sobre esta API.
 |---|---|
 | Node.js | **24 LTS** (fijada en `.nvmrc` y en `engines` de `package.json`) |
 | npm | 10 o superior |
-| PostgreSQL | 14 o superior (probado con 18) |
+| PostgreSQL | 14 o superior (probado con 16 y 18), **compilado con ICU**, como los instaladores oficiales y la imagen de Docker. El orden alfabético usa la colación `es-x-icu`. |
 
 Con `nvm` (o `nvm-windows`) puedes activar la versión correcta con:
 
@@ -183,12 +183,12 @@ El resultado aparece como un check en cada PR y en la insignia de arriba. Convie
 Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `tests/globalSetup.ts`:
 
 1. Recrea la base de pruebas.
-2. Aplica la migración y la semilla.
+2. Aplica la migración y la semilla. La base se crea con la configuración regional «C» a propósito (ver [Orden alfabético](#orden-alfabético-en-español)).
 3. Agrega una cuenta inactiva.
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 139 pruebas en seis archivos:
+Hay 149 pruebas en siete archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -198,6 +198,7 @@ Hay 139 pruebas en seis archivos:
 | `tests/estudiantes.test.ts` | 37 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
 | `tests/asistencias.test.ts` | 18 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
 | `tests/estadisticas.test.ts` | 19 | Estadísticas con un mes de datos fijos y resultados calculados a mano, y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
+| `tests/orden.test.ts` | 10 | Orden alfabético en español de todas las listas (P2, P3, P4, P5, XLSX y PDF) con la base en configuración «C»: acentos, «ñ», minúsculas y empates en «más faltas». |
 
 En las pruebas, `vitest.config.ts` cambia dos valores:
 - `SSE_LATIDO_SEGUNDOS` vale `0.5`, para comprobar en segundos el cierre por sesión terminada.
@@ -315,6 +316,20 @@ El encabezado de la prueba describe un mes de datos y el cálculo hecho a mano. 
 - No contar a quien registró fuera de su inscripción.
 
 Cada una hizo fallar 7 pruebas.
+
+### Orden alfabético (`orden.test.ts`)
+
+El encabezado de la prueba tiene los datos y el orden esperado junto al orden incorrecto de la configuración «C».
+
+| Caso | Qué se comprueba |
+|---|---|
+| Base de pruebas | Está en configuración «C» y, sin `ORDEN_ES`, PostgreSQL deja los acentos y la «ñ» al final |
+| P4 | Los apellidos `alba, Álvarez, Núñez, Ñandú, Ochoa, Presente, Zúñiga` salen en ese orden, también al paginar |
+| P5 y P2 | Los grupos `Ábaco, álgebra, Nube, Ñu, Zeta` y sus clases salen en orden |
+| P3 | «Por clase» sale por grupo y materia. Con seis estudiantes empatados en faltas, «más faltas» sale por apellidos, y con `top=3` entran los tres primeros del alfabeto |
+| XLSX y PDF | El mismo orden que el endpoint |
+
+Para confirmar que detectan el error, se quitó a propósito la colación de `ORDEN_ES`: fallaron 10 pruebas (9 de este archivo y la de paginación de `estudiantes.test.ts`).
 
 ## API de autenticación
 
@@ -757,7 +772,21 @@ En una escuela, una falta falsa le hace más daño a un estudiante que una falta
 - **El rol nunca se toma del token.** El JWT solo lleva el id del usuario. En cada solicitud, `requiereSesion` vuelve a leer el usuario en la base y exige `activo = true`. Así, una cuenta desactivada o un cambio de rol aplican de inmediato (RF-09).
 - **Error genérico con tiempo similar.** Si el correo no existe, la contraseña se verifica contra un hash ficticio. De esta forma, «correo inexistente», «contraseña incorrecta» y «cuenta inactiva» cuestan lo mismo: una verificación argon2 completa. En una medición local, las medianas fueron de 47.5 ms y 44.9 ms.
 - **Validación con `zod`.** Repite en la API la validación de forma del frontend (paso 2 de AD-01). El correo se normaliza con `trim` y minúsculas, y la contraseña tiene un máximo de 256 caracteres para que no se pueda gastar CPU con hashes enormes. Las variables de entorno también se validan con `zod` al arrancar.
+- **Orden alfabético fijo en las consultas.** Ver [Orden alfabético en español](#orden-alfabético-en-español).
 - **`helmet`** agrega los encabezados de seguridad, y `express.json` acepta como máximo 10 KB.
+
+### Orden alfabético en español
+
+Sin indicar nada, PostgreSQL ordena el texto según la configuración regional con la que se creó la base. Con la configuración «C» (habitual en contenedores e instalaciones mínimas) compara byte por byte: «Álvarez» y «Ñandú» quedan después de «Zúñiga», y las minúsculas, después de las mayúsculas. En «más faltas», que tiene un límite, eso cambia incluso **quién aparece** cuando hay empate.
+
+- **Decisión:** todo `ORDER BY` sobre un texto visible lleva la constante `ORDEN_ES` (`COLLATE "es-x-icu"`, en `src/db/orden.ts`). El orden es el mismo en cualquier servidor: los acentos no mueven la letra y la «ñ» va después de la «n».
+- **Dónde se usa:** lista de estudiantes (P4), grupos (P5), selectores de P2, y «por clase» y «más faltas» de P3. Los PDF y XLSX usan esas mismas consultas. Cada orden termina con el id, para que los empates salgan siempre igual.
+- **Opciones descartadas:**
+  - Crear la base con idioma español: depende de quien la instale, y los nombres de la configuración cambian entre Windows y Linux.
+  - Cambiar la colación de las columnas con una migración: reconstruye índices y es un cambio grande para un problema de orden.
+- **Cómo se vigila:** la base de pruebas se crea en configuración «C» (`colacionC` en `db/preparar-base.ts`). Una consulta nueva que ordene texto sin `ORDEN_ES` falla en cualquier computadora y en el CI.
+- **Requisito:** PostgreSQL compilado con ICU. No cambia el modelo de datos ni necesita migración.
+- **No afecta a la búsqueda `q`,** que ya usa `unaccent` e `ILIKE`.
 
 ### Límite de intentos
 
@@ -835,6 +864,7 @@ scripts/
 src/
   config/env.ts              variables de entorno validadas con zod
   db/pool.ts                 pool de conexiones a PostgreSQL
+  db/orden.ts                ORDEN_ES: orden alfabético en español para los ORDER BY
   db/transaccion.ts          conTransaccion: BEGIN / COMMIT / ROLLBACK
   eventos/eventos.ts         EventEmitter tipado (asistencia:registrada)
   middleware/                requiereSesion, requiereRol, requiereDispositivo,

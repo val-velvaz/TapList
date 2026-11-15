@@ -20,7 +20,8 @@ export default async function setup(): Promise<void> {
   const nombre = process.env.PGDATABASE_TEST;
   if (!nombre) throw new Error('Falta PGDATABASE_TEST en el archivo .env');
 
-  await prepararBase(nombre, { reiniciar: true, sembrar: true });
+  // Configuración «C» a propósito: ver `colacionC` en db/preparar-base.ts.
+  await prepararBase(nombre, { reiniciar: true, sembrar: true, colacionC: true });
 
   const cliente = new pg.Client({ database: nombre });
   await cliente.connect();
