@@ -288,6 +288,24 @@ describe('Validación y errores', () => {
     }
   });
 
+  it('UID en decimal, con un cero perdido o truncado: 400 y sin registro', async () => {
+    // 0077705923 es el UID de Andrea (04A1B2C3) como lo escribiría un lector USB en decimal.
+    for (const uid of ['0077705923', '4A1B2C3', '04A1B2C3D', '041122334455', '04-A1-B2-C3']) {
+      const res = await leer({ uid });
+      expect(res.status, uid).toBe(400);
+      expect(res.body.detalles.uid).toBe('El UID debe ser hexadecimal de 4, 7 o 10 bytes (8, 14 o 20 caracteres)');
+    }
+    expect(await registros()).toHaveLength(0);
+  });
+
+  it('UID de 4, 7 y 10 bytes bien formados se aceptan: 200 aunque la credencial no exista', async () => {
+    for (const uid of ['DEADBEEF', 'de:ad:be:ef:5b:4a:39', 'DE AD BE EF 5B 4A 39 28 17 06']) {
+      const res = await leer({ uid });
+      expect(res.status, uid).toBe(200);
+      expect(res.body).toEqual({ resultado: 'RECHAZADA', motivo: 'CREDENCIAL_NO_VALIDA' });
+    }
+  });
+
   it('si el guardado falla, responde 500 «No se pudo guardar» sin registro', async () => {
     const consultaOriginal = pool.query.bind(pool);
     vi.spyOn(console, 'error').mockImplementation(() => {});
