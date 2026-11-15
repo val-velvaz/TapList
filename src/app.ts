@@ -7,6 +7,7 @@ import { requiereRol } from './middleware/requiereRol.js';
 import { requiereSesion } from './middleware/requiereSesion.js';
 import { rutasAsistencias } from './modules/asistencias/asistencias.routes.js';
 import { rutasAuth } from './modules/auth/auth.routes.js';
+import { rutasEstadisticas } from './modules/estadisticas/estadisticas.routes.js';
 import { rutasEstudiantes } from './modules/estudiantes/estudiantes.routes.js';
 import { rutasGrupos } from './modules/grupos/grupos.routes.js';
 import { rutasLecturas } from './modules/lecturas/lecturas.routes.js';
@@ -24,8 +25,7 @@ export function crearApp(): Express {
   app.use('/api/estudiantes', rutasEstudiantes);
   app.use('/api/grupos', rutasGrupos);
   app.use('/api/asistencias', rutasAsistencias);
-  // Aquí se montarán los módulos siguientes, p. ej.:
-  //   app.use('/api/estadisticas', rutasEstadisticas);
+  app.use('/api/estadisticas', rutasEstadisticas);
 
   if (env.NODE_ENV === 'test') {
     // Ruta que solo existe en pruebas, para verificar requiereRol.

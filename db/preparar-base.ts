@@ -13,8 +13,12 @@ export interface OpcionesPreparacion {
 }
 
 function conexionBase(database: string): pg.ClientConfig {
-  // pg toma PGHOST, PGPORT, PGUSER y PGPASSWORD del entorno (.env).
-  return { database };
+  // pg toma PGHOST, PGPORT, PGUSER y PGPASSWORD del entorno (.env). La zona
+  // horaria es la de la escuela, igual que en el pool de la aplicación, para
+  // que las migraciones calculen las fechas en el mismo día.
+  const zona = process.env.ZONA_HORARIA_ESCUELA || 'America/Mexico_City';
+  if (!/^[A-Za-z0-9_+\-/]+$/.test(zona)) throw new Error(`ZONA_HORARIA_ESCUELA inválida: "${zona}"`);
+  return { database, options: `-c timezone=${zona}` };
 }
 
 async function ejecutarCarpeta(cliente: pg.Client, carpeta: string): Promise<string[]> {

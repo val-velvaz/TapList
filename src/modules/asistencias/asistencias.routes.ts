@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requiereRol } from '../../middleware/requiereRol.js';
 import { requiereSesion } from '../../middleware/requiereSesion.js';
+import { exportarListaAsistencias } from '../exportacion/exportacion.controller.js';
 import { filtros, listar } from './asistencias.controller.js';
 import { flujoEventos } from './asistencias.tiempoReal.js';
 
@@ -15,3 +16,4 @@ rutasAsistencias.use(requiereSesion, requiereRol('Docente'), (_req, res, next) =
 rutasAsistencias.get('/', listar);
 rutasAsistencias.get('/filtros', filtros);
 rutasAsistencias.get('/eventos', flujoEventos);
+rutasAsistencias.get('/exportar', exportarListaAsistencias);
