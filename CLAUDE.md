@@ -123,6 +123,7 @@ npm run db:setup                     # crea "taplist", migra y carga la semilla
 npm run db:setup -- --reset          # borra "taplist" y la recrea
 npm run dispositivo:clave -- <id>    # genera o rota la clave de un lector y la muestra una sola vez
 npm run simular:lectura -- <uid> [--leido-en <ISO>]   # simula el ESP32
+npm run uid:revisar -- <valor> [--comparar <otro>]    # revisa el formato de un UID y lo compara con otro
 ```
 
 ### 3.3 Estructura
@@ -132,8 +133,9 @@ npm run simular:lectura -- <uid> [--leido-en <ISO>]   # simula el ESP32
 db/migrations/001..004          esquema (orden alfabético)
 db/seeds/001_datos_prueba.sql   datos ficticios solo para desarrollo
 db/preparar-base.ts             crea la base, migra y carga la semilla
-docs/contrato-dispositivo.md    contrato de la API para el firmware del ESP32
-scripts/                        db-setup, dispositivo-clave, simular-lectura
+docs/contrato-dispositivo.md    contrato de la API para el firmware del ESP32 (incluye el formato canónico del UID)
+docs/guia-firmware.md           guía para el equipo: capa del lector, conexiones y lista de pruebas
+scripts/                        db-setup, dispositivo-clave, simular-lectura, uid-revisar
 src/app.ts                      arma Express y monta las rutas (lo usan el servidor y las pruebas)
 src/server.ts                   punto de entrada; cierra las conexiones SSE al apagar
 src/config/env.ts               variables de entorno validadas con zod
@@ -147,7 +149,7 @@ src/modules/<módulo>/           <módulo>.routes / .controller / .service / .sc
   auth, lecturas (+ tiempo.ts), estudiantes, grupos, bitacora, dispositivos,
   asistencias (+ tiempoReal.ts, SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
 src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion
-tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden
+tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 ```
 
@@ -222,6 +224,7 @@ Las listas devuelven `pagina`, `por_pagina`, `total` y `total_paginas`.
 
 - **Ventana de una lectura:** cuenta para una clase entre `hora_inicio − 15 min` y `hora_inicio + 60 min`, ambos configurables. Hasta `hora_inicio + tolerancia_min` es Asistencia; después, Retardo. Todo se calcula en `ZONA_HORARIA_ESCUELA` (`America/Mexico_City`), nunca en la zona del servidor.
 - **Duplicados:** `INSERT … ON CONFLICT DO NOTHING` y luego se lee el registro existente. Una lectura repetida responde `duplicado: true` con el mismo estado.
+- **Formato del UID:** uno solo, el canónico de `docs/contrato-dispositivo.md`: hexadecimal en mayúsculas, sin separadores, bytes en el orden de la anticolisión, de 4, 7 o 10 bytes (8, 14 o 20 caracteres; `PATRON_UID` en `src/utils/uid.ts`). La API normaliza mayúsculas, espacios y dos puntos, y rechaza con `400` cualquier otra longitud. El servidor no sabe ni debe saber qué modelo de lector hay.
 - **Lecturas sin conexión:** llegan con `leido_en` y se aceptan desde 24 horas atrás hasta 2 minutos en el futuro.
 - **Faltas:** no se guardan, se calculan. Una sesión es un par (clase, fecha) en el que **alguien registró asistencia** («hubo clase si alguien registró»). Los esperados salen de `inscripcion_grupo`, sin contar el día del alta ni el de la baja. Así nunca se inventan faltas.
 - **Aislamiento entre docentes:** un docente filtra por un estudiante si este pertenece hoy a uno de sus grupos **o** tiene asistencias en alguna de sus clases.
@@ -243,17 +246,18 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **149 pruebas** en 7 archivos:
+Según el README, hay **176 pruebas** en 8 archivos:
 
 | Archivo | Pruebas |
 |---|---|
 | `auth.test.ts` | 19 |
 | `tiempo.test.ts` | 22 |
-| `lecturas.test.ts` | 24 |
-| `estudiantes.test.ts` | 37 |
+| `lecturas.test.ts` | 26 |
+| `estudiantes.test.ts` | 38 |
 | `asistencias.test.ts` | 18 |
 | `estadisticas.test.ts` | 19 |
 | `orden.test.ts` | 10 |
+| `uid.test.ts` | 24 |
 
 Cómo están hechas:
 
@@ -280,6 +284,7 @@ Cómo están hechas:
 | #5 | `feat/estadisticas-exportacion` | Migración 004, estadísticas, exportación PDF y XLSX | Fusionado el 15 de noviembre (`47ad82f`) |
 | #6 | `docs/claude-md` | Este archivo | Fusionado el 15 de noviembre (`f79a04a`) |
 | #7 | `fix/orden-alfabetico` | Orden alfabético en español en todas las listas y base de pruebas en configuración «C» | Abierto |
+| #8 | `docs/lector-nfc` | Formato canónico del UID, guía del firmware, `uid:revisar` y longitud exacta del UID en la API | Abierto; va encima del #7 |
 
 ### Avance aproximado
 
@@ -339,9 +344,10 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 
 Lo hacen los compañeros de Valeria, que tienen poca experiencia con GitHub. **Tú no escribes código en `firmware/`.**
 
-- **Su guía es `docs/contrato-dispositivo.md`.** Si cambias el contrato, actualiza ese documento y avísale a Valeria.
+- **Sus guías son `docs/contrato-dispositivo.md` y `docs/guia-firmware.md`.** Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
+- **Lector previsto: RC522 (MFRC522), sin confirmar** (decisión del 15 de noviembre). Podría terminar siendo un PN532 u otro. **Cambiar de lector solo afecta a la capa del lector en el firmware** (una interfaz de dos funciones y una implementación por modelo, elegida con un `#define`): no toca el servidor, el contrato ni el resto del firmware.
 - **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta.
-- **Pendiente urgente:** confirmar qué lector NFC usa (RC522, PN532…) y que el UID salga en **hexadecimal con los bytes en el mismo orden** que espera la API. Si no coincide, las credenciales se vinculan bien pero salen `RECHAZADA` en el aula.
+- **Pendiente urgente:** que el equipo confirme el modelo del lector, compruebe que la credencial de la escuela es compatible (13.56 MHz, ISO 14443A) y pase la lista de pruebas de la guía. Si el UID no sale en el formato canónico, las credenciales se vinculan bien pero salen `RECHAZADA` en el aula; `npm run uid:revisar` sirve para encontrar la diferencia.
 - **La clave del dispositivo** va en NVS y nunca se imprime por el puerto serie.
 
 ### Paso 4. Actualizar la documentación académica
@@ -375,8 +381,8 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 
 1. **Acceso de estudiantes (UC-02).** El equipo lo consultará con la profesora; **mientras tanto, la web solo tiene Docente y Administrador.** El caso de uso existe, pero el modelo entidad-relación, los diagramas de actividades y el código solo tienen Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Si se aprueba, cambia el modelo de datos y la web. **Conviene decidirlo antes de avanzar la web.**
 2. **Ubicación y stack de la web** (paso 2). **Decidido el 15 de noviembre:** carpeta `web/` en este repositorio, con Vite, React y TypeScript; Express sirve la web en producción.
-3. **Modelo del lector NFC y formato del UID** (paso 3).
-4. **Lector USB de escritorio para capturar UID en P5.** Antes de usarlo, hay que comprobar que entregue el mismo formato que el ESP32.
+3. **Modelo del lector NFC** (paso 3). Previsto el RC522, sin confirmar. El **formato del UID ya está decidido** y no depende del modelo.
+4. **Lector USB de escritorio para capturar UID en P5.** Antes de usarlo, hay que comprobar con `npm run uid:revisar -- <valor> --comparar <otro>` que entregue el mismo formato que el ESP32.
 
 ---
 
