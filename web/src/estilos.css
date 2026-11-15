@@ -1,0 +1,355 @@
+/* Colores y medidas tomados de los bocetos de la Actividad 11 (P1 a P5). */
+:root {
+  --azul: #1f55a0;
+  --azul-oscuro: #184684;
+  --fondo: #f3f4f6;
+  --superficie: #ffffff;
+  --borde: #cdd2da;
+  --borde-suave: #e3e6eb;
+  --texto: #25282d;
+  --texto-suave: #5f6672;
+  --marcador: #9aa1ac;
+  --error-fondo: #fadcdc;
+  --error-texto: #8f1d1d;
+  --info-fondo: #e6eef9;
+  --info-texto: #1b3f77;
+  --radio: 8px;
+  font-family: 'DejaVu Sans', Verdana, 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--texto);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  min-height: 100vh;
+}
+
+a,
+.enlace {
+  color: var(--azul);
+  text-decoration: underline;
+}
+
+.enlace {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--azul);
+  outline-offset: 2px;
+}
+
+.cargando {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+.titulo {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.subtitulo {
+  margin: 2px 0 16px;
+  color: var(--texto-suave);
+}
+
+/* ---------- Botones ---------- */
+.boton {
+  font: inherit;
+  padding: 9px 20px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--superficie);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.boton:hover:not(:disabled) {
+  background: #f6f7f9;
+}
+
+.boton:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.boton--primario {
+  background: var(--azul);
+  border-color: var(--azul);
+  color: #fff;
+  font-weight: 700;
+}
+
+.boton--primario:hover:not(:disabled) {
+  background: var(--azul-oscuro);
+}
+
+.boton--ancho {
+  width: 100%;
+  padding: 13px 20px;
+}
+
+/* ---------- Avisos ---------- */
+.aviso {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.aviso--error {
+  background: var(--error-fondo);
+  color: var(--error-texto);
+}
+
+.aviso--informativo {
+  background: var(--info-fondo);
+  color: var(--info-texto);
+}
+
+/* ---------- Campos ---------- */
+.campo {
+  display: block;
+  margin-top: 16px;
+}
+
+.campo__etiqueta {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+}
+
+.campo__entrada {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+.campo__entrada::placeholder {
+  color: var(--marcador);
+}
+
+.campo__entrada[aria-invalid='true'] {
+  border-color: var(--error-texto);
+}
+
+.campo__con-boton {
+  position: relative;
+  display: block;
+}
+
+.campo__con-boton .campo__entrada {
+  padding-right: 84px;
+}
+
+.campo__boton {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.campo__error {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--error-texto);
+}
+
+/* ---------- P1 · Inicio de sesión ---------- */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.login__tarjeta {
+  width: 100%;
+  max-width: 430px;
+  padding: 36px 36px 32px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.login__marca {
+  margin: 0;
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--azul);
+}
+
+.login__lema {
+  margin: 4px 0 8px;
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+.login__olvido {
+  margin: 8px 0 16px;
+  text-align: right;
+  font-size: 0.9rem;
+}
+
+.login__olvido + .aviso {
+  margin: 0 0 16px;
+}
+
+.login__privacidad {
+  margin: 20px 0 0;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--texto-suave);
+}
+
+.login__privacidad a {
+  color: inherit;
+}
+
+/* ---------- Encabezado de P2 a P5 ---------- */
+.encabezado {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 0 28px;
+  padding: 0 28px;
+  background: var(--superficie);
+  border-bottom: 2px solid var(--azul);
+}
+
+.encabezado__marca {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 16px 0;
+}
+
+.marca {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--azul);
+}
+
+.encabezado__panel {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.menu {
+  display: flex;
+  gap: 24px;
+}
+
+.menu__enlace {
+  display: flex;
+  align-items: center;
+  padding: 0 2px;
+  color: var(--texto-suave);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.menu__enlace--activo {
+  color: var(--texto);
+  font-weight: 700;
+  border-bottom-color: var(--azul);
+}
+
+.encabezado__usuario {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-left: auto;
+  padding: 10px 0;
+}
+
+.pastilla {
+  padding: 5px 14px;
+  font-size: 0.85rem;
+  background: var(--fondo);
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+}
+
+.contenido {
+  padding: 28px;
+  background: var(--superficie);
+  min-height: calc(100vh - 64px);
+}
+
+/* ---------- Páginas sueltas ---------- */
+.pagina-simple {
+  max-width: 480px;
+  margin: 80px auto;
+  padding: 32px;
+  text-align: center;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+
+.pagina-simple--texto {
+  max-width: 640px;
+  text-align: left;
+}
+
+/* Diseño responsivo (RNF-07) */
+@media (max-width: 640px) {
+  .login__tarjeta {
+    padding: 28px 20px 24px;
+  }
+
+  .encabezado {
+    padding: 0 16px;
+  }
+
+  .encabezado__usuario {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .menu {
+    padding: 8px 0;
+  }
+
+  .menu__enlace {
+    padding-bottom: 6px;
+  }
+
+  .contenido {
+    padding: 20px 16px;
+  }
+}
