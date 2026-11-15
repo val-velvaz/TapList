@@ -2,6 +2,8 @@
 
 Este documento es para quien programe el firmware del lector NFC de TapList. Describe la única petición que hace el dispositivo, las respuestas posibles y la señal que debe mostrar con cada una.
 
+Para organizar el firmware, conectar el lector y probarlo, consulta la [guía del firmware](guia-firmware.md).
+
 **Regla de oro:** el dispositivo **no decide nada**. Lee el UID, lo envía y muestra lo que la API responde. Toda la lógica (credenciales, horarios, retardos, duplicados) vive en el servidor.
 
 ## Petición
@@ -41,8 +43,73 @@ Lectura guardada sin conexión, reenviada al reconectarse:
 
 | Campo | Obligatorio | Formato |
 |---|---|---|
-| `uid` | Sí | Hexadecimal, de 8 a 20 caracteres (4, 7 o 10 bytes). Se aceptan mayúsculas o minúsculas, espacios y dos puntos: `04:a2:b3:c4` equivale a `04A2B3C4`. |
+| `uid` | Sí | El UID en el [formato canónico](#formato-canónico-del-uid): hexadecimal de 4, 7 o 10 bytes (exactamente 8, 14 o 20 caracteres). Cualquier otra longitud responde `400`. |
 | `leido_en` | No | Fecha y hora **de la lectura** en ISO 8601 **con zona horaria** (`-06:00` o `Z`). Solo se envía en las lecturas guardadas sin conexión. |
+
+## Formato canónico del UID
+
+El UID es el número de serie que la tarjeta entrega al lector. La API compara el que envía el dispositivo con el que se guardó al vincular la credencial: **si no son idénticos, carácter por carácter, la lectura sale `RECHAZADA`**, aunque la tarjeta sea la correcta. Por eso el formato es uno solo, sin importar el modelo del lector:
+
+| Regla | Detalle |
+|---|---|
+| Hexadecimal | Dos caracteres por byte, del `00` al `FF`. Nunca en decimal. |
+| En mayúsculas | `04A2B3C4`, no `04a2b3c4`. |
+| Sin separadores | Ni espacios, ni dos puntos, ni guiones, ni `0x`. |
+| Bytes en el orden de la anticolisión | El primer byte que entrega la tarjeta va primero. Es el orden en que las librerías llenan su arreglo: del índice `0` al último. |
+| Completo | Los 4, 7 o 10 bytes que tenga la tarjeta: 8, 14 o 20 caracteres. |
+
+Ejemplo: una tarjeta que entrega los bytes `0x04 0xA2 0xB3 0xC4 0xD5 0xE6 0xF7` se envía como `04A2B3C4D5E6F7`.
+
+Por comodidad en las pruebas a mano, la API también acepta minúsculas, espacios y dos puntos (`04:a2:b3:c4` equivale a `04A2B3C4`) y los convierte al formato canónico. **El firmware debe enviar siempre el formato canónico.** Los guiones, las comas y el prefijo `0x` no se aceptan.
+
+### Cómo obtenerlo con cada librería
+
+Los dos fragmentos son ejemplos para mostrar de dónde salen los bytes; no son un firmware completo.
+
+**RC522, con la librería MFRC522:** después de `PICC_ReadCardSerial()`, los bytes están en `mfrc522.uid.uidByte[0]` … `mfrc522.uid.uidByte[mfrc522.uid.size - 1]`.
+
+```cpp
+// EJEMPLO
+for (byte i = 0; i < mfrc522.uid.size; i++) {
+  byte b = mfrc522.uid.uidByte[i];   // i = 0 es el primer byte del UID
+  // agregar b al texto con DOS caracteres hexadecimales en mayúsculas
+}
+```
+
+**PN532, con la librería Adafruit_PN532:** después de `readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)`, los bytes están en `uid[0]` … `uid[uidLength - 1]`.
+
+```cpp
+// EJEMPLO
+uint8_t uid[10];        // 10, no 7: así cabe el UID más largo
+uint8_t uidLength;
+if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+  for (uint8_t i = 0; i < uidLength; i++) {
+    uint8_t b = uid[i];              // i = 0 es el primer byte del UID
+    // agregar b al texto con DOS caracteres hexadecimales en mayúsculas
+  }
+}
+```
+
+En los dos casos, el recorrido es **del índice 0 al último** y la conversión a texto debe ser **la misma función** (ver la [guía del firmware](guia-firmware.md#3-una-sola-función-para-convertir-el-uid-a-texto)).
+
+### Errores comunes
+
+Para los ejemplos, la tarjeta entrega `0x04 0x0A 0xB2 0xC3` y su UID correcto es `040AB2C3`.
+
+| Error | Lo que se envía | Por qué pasa | Qué responde la API |
+|---|---|---|---|
+| Bytes invertidos | `C3B20A04` | Recorrer el arreglo del último al primero, o armar un número de 32 bits y luego imprimirlo. | `200` con `RECHAZADA`: el formato es válido, pero no coincide con la credencial. |
+| Formato decimal | `0067809987` | Convertir los bytes a un número y enviarlo con `String(numero)`. Es lo que hacen por defecto muchos lectores USB. | `400` si tiene 10 dígitos. Con 8, 14 o 20 dígitos **no se puede distinguir** de un hexadecimal: `RECHAZADA`. |
+| Ceros a la izquierda perdidos | `4AB2C3` | `String(b, HEX)` y `Serial.print(b, HEX)` escriben `0x0A` como `A`, con un solo carácter. | `400` si la longitud queda impar o no es 8, 14 o 20. Si por casualidad queda en una longitud válida, `RECHAZADA`. |
+| UID truncado a 4 bytes | `04A2B3C4` en vez de `04A2B3C4D5E6F7` | Guardar el UID en un arreglo de 4 bytes o en un `uint32_t`, o leer solo el primer nivel de la anticolisión. | `RECHAZADA`. Si empieza con `88`, es la señal de este error: `88` es una marca interna de las tarjetas de 7 y 10 bytes, no parte del UID. |
+
+Los errores que responden `RECHAZADA` son los más difíciles de encontrar, porque la API no puede saber que el formato está mal. Para detectarlos antes de llegar al aula:
+
+```bash
+npm run uid:revisar -- <lo que imprime el ESP32> --comparar <lo que entrega el otro lector>
+```
+
+La herramienta dice si los dos valores son la misma tarjeta con los bytes invertidos, en decimal, con ceros perdidos o truncada. Está explicada en la [guía del firmware](guia-firmware.md#7-lista-de-pruebas-con-el-circuito).
 
 ## Respuestas y señales
 
