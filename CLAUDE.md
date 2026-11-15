@@ -13,7 +13,8 @@ Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto,
 - **Contexto académico:** proyecto de la materia Ingeniería de Software (CB224), CUCEI, Universidad de Guadalajara. Ciclo 2026-B. La evalúa la profesora de la materia.
 - **Equipo SoftProduct:**
   - **Valeria Velázquez Vázquez** (`val-velvaz` en GitHub): dueña del repositorio. Hizo todo el backend contigo y es con quien hablas.
-  - **Responsable de la web** y **responsable del firmware del ESP32 y del circuito**: los otros dos integrantes del equipo. Quien hace el circuito tiene poca experiencia con GitHub.
+  - **Los otros dos integrantes** hacen el **firmware del ESP32 y el circuito**. Tienen poca experiencia con GitHub.
+  - **Reparto del trabajo (decidido el 15 de noviembre):** tú (Claude Code) haces **toda la web** con Valeria. El firmware y el circuito son del equipo: **no escribas código en `firmware/`.** Lo tuyo es el servidor, la web, la documentación y las herramientas de apoyo.
 - **Repositorio:** `https://github.com/val-velvaz/TapList` (público). Rama principal: `main`.
 
 ### Las tres partes del sistema
@@ -88,7 +89,7 @@ El equipo entregó un documento con el modelo 4+1 que es la referencia del dise�
 - **GitHub CLI** en `C:\Program Files\GitHub CLI`, con sesión iniciada como `val-velvaz`.
 - **Terminales antiguas:** las que se abrieron antes de instalar nvm-windows y `gh` no encuentran `node` ni `gh`. Una terminal nueva sí los encuentra. Si te pasa, agrega esas dos rutas al `PATH` del comando; no reinstales nada.
 - **PostgreSQL 18 local.** `psql` entra como `postgres` sin pedir contraseña (por `pgpass.conf` o por confianza local). El `.env` usa `PGUSER=postgres` con `PGPASSWORD` vacío.
-- **La carpeta de usuario (`C:\Users\valer`) es un repositorio de Git**, probablemente creado por accidente. Trabaja siempre dentro de la carpeta del proyecto, que tiene su propio `.git`. Nunca hagas commits en el repositorio de la carpeta de usuario.
+- **La carpeta de usuario de Windows es un repositorio de Git**, probablemente creado por accidente. Trabaja siempre dentro de la carpeta del proyecto, que tiene su propio `.git`. Nunca hagas commits en el repositorio de la carpeta de usuario.
 - **`curl` en Windows rompe los acentos** si el JSON va en la línea de comandos: «Núñez» llega como «N�ez». Para probar a mano con acentos, manda el cuerpo desde un archivo UTF-8 (`curl --data-binary @cuerpo.json`) o usa `Invoke-RestMethod`. No es un problema de la API.
 - **`main` está protegida** con un ruleset: exige el check «Tipos, compilación y pruebas» y bloquea los *force push*. No exige aprobaciones, porque Valeria trabaja sola en el repositorio y GitHub no deja aprobar los propios PR.
 - **Ya usaste Auto-fix** en algunos PR para atender fallas del CI y comentarios. CodeRabbit deja un comentario automático diciendo que no revisa el repositorio por tener pocas estrellas; ignóralo salvo que Valeria pida la revisión.
@@ -282,7 +283,7 @@ Cómo están hechas:
 |---|---|---|
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
-| Web | 25 % | 0 %. No hay commits del equipo en el repositorio. |
+| Web | 25 % | 0 %. Plan aprobado: 5 entregas, un PR por entrega. |
 | Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Está el contrato, sin código. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
 | **Total** | | **≈ 56 %** |
@@ -304,7 +305,7 @@ Si el PR de `feat/estadisticas-exportacion` no existe, ábrelo. Si existe, revis
 
 ### Paso 2. Página web (la parte más grande que falta)
 
-La hará un compañero del equipo, pero probablemente con tu ayuda o la de Valeria. Antes de escribir código, **presenta un plan y espera aprobación.** El plan debe decidir y justificar:
+La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/` con Vite, React y TypeScript, y Express sirve la web en producción. Son **5 entregas, una rama y un PR por entrega:** (1) base, CI y P1; (2) P2 con SSE y exportación; (3) P3; (4) P4 y P5; (5) producción. **Antes de cada entrega, presenta un plan corto y espera aprobación.** Al abrir el PR de la entrega 1, recuérdale a Valeria agregar el check nuevo de la web al ruleset de `main`. Lo que cada plan debe respetar:
 
 - **Ubicación:**
   - Recomendado: una carpeta `web/` en este mismo repositorio, con su propio `package.json`.
@@ -332,7 +333,7 @@ La hará un compañero del equipo, pero probablemente con tu ayuda o la de Valer
 
 ### Paso 3. Firmware del ESP32
 
-Lo hace el compañero del circuito, que tiene poca experiencia con GitHub.
+Lo hacen los compañeros de Valeria, que tienen poca experiencia con GitHub. **Tú no escribes código en `firmware/`.**
 
 - **Su guía es `docs/contrato-dispositivo.md`.** Si cambias el contrato, actualiza ese documento y avísale a Valeria.
 - **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta.
@@ -369,7 +370,7 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 **No las tomes tú. Pregúntale a Valeria.**
 
 1. **Acceso de estudiantes (UC-02).** El equipo lo consultará con la profesora; **mientras tanto, la web solo tiene Docente y Administrador.** El caso de uso existe, pero el modelo entidad-relación, los diagramas de actividades y el código solo tienen Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Si se aprueba, cambia el modelo de datos y la web. **Conviene decidirlo antes de avanzar la web.**
-2. **Ubicación y stack de la web** (paso 2). **Decidido el 15 de noviembre:** carpeta `web/` en este repositorio, con Vite, React y TypeScript.
+2. **Ubicación y stack de la web** (paso 2). **Decidido el 15 de noviembre:** carpeta `web/` en este repositorio, con Vite, React y TypeScript; Express sirve la web en producción.
 3. **Modelo del lector NFC y formato del UID** (paso 3).
 4. **Lector USB de escritorio para capturar UID en P5.** Antes de usarlo, hay que comprobar que entregue el mismo formato que el ESP32.
 
