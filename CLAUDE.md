@@ -139,6 +139,7 @@ src/server.ts                   punto de entrada; cierra las conexiones SSE al a
 src/config/env.ts               variables de entorno validadas con zod
 src/db/pool.ts                  pool de pg; cada sesión usa timezone = ZONA_HORARIA_ESCUELA
 src/db/transaccion.ts           conTransaccion(fn): BEGIN / COMMIT / ROLLBACK
+src/db/orden.ts                 ORDEN_ES: orden alfabético en español para los ORDER BY
 src/eventos/eventos.ts          EventEmitter tipado: asistencia:registrada (sin UID)
 src/middleware/                 requiereSesion, requiereRol, requiereDispositivo,
                                 limiteIntentos, limiteDispositivo, manejoErrores
@@ -146,7 +147,7 @@ src/modules/<módulo>/           <módulo>.routes / .controller / .service / .sc
   auth, lecturas (+ tiempo.ts), estudiantes, grupos, bitacora, dispositivos,
   asistencias (+ tiempoReal.ts, SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
 src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion
-tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas
+tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 ```
 
@@ -242,7 +243,7 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **139 pruebas** en 6 archivos:
+Según el README, hay **149 pruebas** en 7 archivos:
 
 | Archivo | Pruebas |
 |---|---|
@@ -252,10 +253,11 @@ Según el README, hay **139 pruebas** en 6 archivos:
 | `estudiantes.test.ts` | 37 |
 | `asistencias.test.ts` | 18 |
 | `estadisticas.test.ts` | 19 |
+| `orden.test.ts` | 10 |
 
 Cómo están hechas:
 
-- Corren contra `taplist_test`, que `tests/globalSetup.ts` recrea en cada corrida.
+- Corren contra `taplist_test`, que `tests/globalSetup.ts` recrea en cada corrida **con la configuración regional «C»**, para que una consulta que ordene texto sin `ORDEN_ES` falle en cualquier computadora.
 - `vitest.config.ts` genera un `JWT_SECRET` aleatorio, baja `SSE_LATIDO_SEGUNDOS` a 0.5 y `EXPORTACION_MAX_FILAS` a 12, y corre los archivos en serie (`fileParallelism: false`).
 - Las de lecturas fijan el reloj y corren el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor.
 - Las de estadísticas usan un mes de datos con resultados **calculados a mano** (7 sesiones, 26 esperados, 12 asistencias, 4 retardos, 10 faltas, 61.5 %).
@@ -275,7 +277,9 @@ Cómo están hechas:
 | #2 | `ci/pruebas-automaticas` | Workflow de CI | Fusionado |
 | #3 | `feat/gestion-estudiantes` | Migración 003, transacciones, bitácora, gestión de estudiantes | Fusionado (`2214441`) |
 | #4 | `feat/consulta-asistencias` | Consulta de asistencias y SSE | Fusionado (`284efb3`) |
-| #5 | `feat/estadisticas-exportacion` | Migración 004, estadísticas, exportación PDF y XLSX | Fusionado el 15 de noviembre (`47ad82f`), que es el `main` actual |
+| #5 | `feat/estadisticas-exportacion` | Migración 004, estadísticas, exportación PDF y XLSX | Fusionado el 15 de noviembre (`47ad82f`) |
+| #6 | `docs/claude-md` | Este archivo | Fusionado el 15 de noviembre (`f79a04a`) |
+| #7 | `fix/orden-alfabetico` | Orden alfabético en español en todas las listas y base de pruebas en configuración «C» | Abierto |
 
 ### Avance aproximado
 
@@ -408,6 +412,7 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 - **Zona horaria:** nunca uses la zona del servidor. Usa `ZONA_HORARIA_ESCUELA` y las funciones de `tiempo.ts`.
 - **Secretos:** nada en el código. Todo va en `.env`, documentado en `.env.example` y validado en `env.ts`. Las credenciales de la semilla son solo para desarrollo.
 - **SQL directo con parámetros** (`$1`, `$2`…), nunca concatenando valores.
+- **Orden alfabético:** todo `ORDER BY` sobre un texto visible lleva `ORDEN_ES` (`src/db/orden.ts`) y termina con el id como desempate. Nunca dependas de la configuración regional de la base.
 
 ### Modelo de datos
 
