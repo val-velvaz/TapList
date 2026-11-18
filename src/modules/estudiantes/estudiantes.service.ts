@@ -4,6 +4,7 @@ import { pool } from '../../db/pool.js';
 import { conTransaccion } from '../../db/transaccion.js';
 import { esViolacionLlaveForanea, esViolacionUnica } from '../../utils/erroresPg.js';
 import { HttpError } from '../../utils/HttpError.js';
+import { condicionesBusquedaEstudiante } from '../../utils/busqueda.js';
 import { armarPagina, type Pagina } from '../../utils/validacion.js';
 import { registrarEnBitacora } from '../bitacora/bitacora.service.js';
 import type { DatosAlta, FiltrosConsulta } from './estudiantes.schemas.js';
@@ -83,26 +84,13 @@ function aEstudiantePublico(fila: FilaEstudiante): EstudiantePublico {
   };
 }
 
-/** Escapa los comodines de LIKE para buscar el texto literal. */
-function escaparLike(texto: string): string {
-  return texto.replace(/[\\%_]/g, '\\$&');
-}
-
 /** P4: lista paginada con búsqueda y filtros. */
 export async function listarEstudiantes(filtros: FiltrosConsulta): Promise<PaginaEstudiantes> {
   const condiciones: string[] = [];
   const parametros: unknown[] = [];
   const parametro = (valor: unknown) => `$${parametros.push(valor)}`;
 
-  if (filtros.q) {
-    // Por palabras: cada una debe aparecer en el nombre, los apellidos o la
-    // matrícula, en cualquier orden ("gomez beatriz" encuentra a "Beatriz
-    // Gómez Ruiz"). Sin distinguir mayúsculas (ILIKE) ni acentos (unaccent).
-    for (const palabra of filtros.q.split(/\s+/).slice(0, 5)) {
-      const patron = parametro(`%${escaparLike(palabra)}%`);
-      condiciones.push(`unaccent(e.nombre || ' ' || e.apellidos || ' ' || e.matricula) ILIKE unaccent(${patron})`);
-    }
-  }
+  if (filtros.q) condiciones.push(...condicionesBusquedaEstudiante(filtros.q, 'e', parametro));
   if (filtros.id_grupo) condiciones.push(`e.id_grupo = ${parametro(filtros.id_grupo)}`);
   if (filtros.con_credencial !== undefined) {
     condiciones.push(filtros.con_credencial ? 'c.id_credencial IS NOT NULL' : 'c.id_credencial IS NULL');

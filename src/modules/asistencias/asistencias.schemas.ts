@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { camposPaginacion, idEnQuery } from '../../utils/validacion.js';
+import { ESTADOS_REGISTRO } from './registros.js';
 
 const fecha = (campo: string) => z.iso.date({ error: `${campo} debe ser una fecha válida YYYY-MM-DD` });
 
@@ -8,7 +9,14 @@ const camposFiltros = {
   id_grupo: idEnQuery('id_grupo').optional(),
   id_clase: idEnQuery('id_clase').optional(),
   id_estudiante: idEnQuery('id_estudiante').optional(),
-  estado: z.enum(['Asistencia', 'Retardo'], { error: 'estado debe ser Asistencia o Retardo' }).optional(),
+  // Busca por nombre, apellidos o matrícula, sin distinguir acentos (igual que P4).
+  q: z
+    .string({ error: 'q debe ser texto' })
+    .trim()
+    .max(100, 'q es demasiado largo')
+    .optional()
+    .transform((v) => v || undefined),
+  estado: z.enum(ESTADOS_REGISTRO, { error: 'estado debe ser Asistencia, Retardo, Falta o Pendiente' }).optional(),
   desde: fecha('desde').optional(),
   hasta: fecha('hasta').optional(),
 };

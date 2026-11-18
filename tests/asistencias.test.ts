@@ -262,7 +262,7 @@ describe('Lista de asistencias (P2)', () => {
   });
 
   it('valida los parámetros con 400', async () => {
-    const res = await consultar(cookies.A, { estado: 'Falta', desde: '2026-02-30', por_pagina: 0 });
+    const res = await consultar(cookies.A, { estado: 'Ausente', desde: '2026-02-30', por_pagina: 0 });
     expect(res.status).toBe(400);
     expect(Object.keys(res.body.detalles).sort()).toEqual(['desde', 'estado', 'por_pagina']);
 

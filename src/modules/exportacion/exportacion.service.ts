@@ -89,8 +89,7 @@ export async function exportarAsistencias(usuario: UsuarioSesion, filtros: Filtr
   }
 
   const nombres = await nombresDeFiltros(filtros);
-  const asistencias = pagina.datos.filter((a) => a.estado === 'Asistencia').length;
-  const retardos = pagina.datos.filter((a) => a.estado === 'Retardo').length;
+  const cuantos = (estado: string) => pagina.datos.filter((a) => a.estado === estado).length;
 
   const encabezado: Encabezado = {
     titulo: 'Lista de asistencias',
@@ -99,10 +98,15 @@ export async function exportarAsistencias(usuario: UsuarioSesion, filtros: Filtr
       ['Grupo', nombres.grupo ?? 'Todos'],
       ['Clase', nombres.materia ?? 'Todas'],
       ['Estudiante', nombres.estudiante ? `${nombres.estudiante} (${nombres.matricula})` : 'Todos'],
+      ['Búsqueda', filtros.q ? `«${filtros.q}»` : 'Ninguna'],
       ['Estado', filtros.estado ?? 'Todos'],
       ['Desde', filtros.desde ?? 'Sin límite'],
       ['Hasta', filtros.hasta ?? 'Sin límite'],
       ['Generado', generadoEl()],
+      [
+        'Faltas y pendientes',
+        'solo en días con al menos un registro; «Pendiente» mientras la ventana de registro de la clase sigue abierta',
+      ],
     ],
   };
   const tabla: Tabla = {
@@ -119,20 +123,22 @@ export async function exportarAsistencias(usuario: UsuarioSesion, filtros: Filtr
     ],
     filas: pagina.datos.map((a) => [
       a.fecha,
-      a.hora,
+      a.hora ?? '—',
       a.estado,
       a.estudiante.matricula,
       a.estudiante.apellidos,
       a.estudiante.nombre,
       a.grupo.nombre,
       a.clase.materia,
-      a.dispositivo.nombre_ubicacion,
+      a.dispositivo?.nombre_ubicacion ?? '—',
     ]),
   };
   const totales: Array<[string, number]> = [
     ['Total de registros', pagina.total],
-    ['Asistencias', asistencias],
-    ['Retardos', retardos],
+    ['Asistencias', cuantos('Asistencia')],
+    ['Retardos', cuantos('Retardo')],
+    ['Faltas', cuantos('Falta')],
+    ['Pendientes', cuantos('Pendiente')],
   ];
 
   return {
@@ -143,6 +149,7 @@ export async function exportarAsistencias(usuario: UsuarioSesion, filtros: Filtr
         nombres.grupo ? aSlug(nombres.grupo) : undefined,
         nombres.materia ? aSlug(nombres.materia) : undefined,
         nombres.matricula ? aSlug(nombres.matricula) : undefined,
+        filtros.q ? aSlug(filtros.q) : undefined,
         filtros.estado?.toLowerCase(),
         textoPeriodo(filtros.desde, filtros.hasta) ?? 'todo',
       ],
@@ -161,9 +168,18 @@ const COLUMNAS_CONTEO: Tabla['columnas'] = [
   { titulo: 'Asistencias', ancho: 72, alinear: 'right' },
   { titulo: 'Retardos', ancho: 62, alinear: 'right' },
   { titulo: 'Faltas', ancho: 56, alinear: 'right' },
+  { titulo: 'Pendientes', ancho: 66, alinear: 'right' },
   { titulo: '% asistencia', ancho: 78, alinear: 'right' },
 ];
-const valoresConteo = (c: Conteo) => [c.sesiones, c.esperados, c.asistencias, c.retardos, c.faltas, c.porcentaje_asistencia];
+const valoresConteo = (c: Conteo) => [
+  c.sesiones,
+  c.esperados,
+  c.asistencias,
+  c.retardos,
+  c.faltas,
+  c.pendientes,
+  c.porcentaje_asistencia,
+];
 
 export async function exportarEstadisticas(
   usuario: UsuarioSesion,
@@ -181,7 +197,8 @@ export async function exportarEstadisticas(
       ['Generado', generadoEl()],
       [
         'Cómo se cuentan las faltas',
-        'solo en días con al menos un registro, sin contar el día de alta ni el de baja del estudiante',
+        'solo en días con al menos un registro, sin contar el día de alta ni el de baja del estudiante; ' +
+          'quien todavía puede registrar (ventana abierta) cuenta como pendiente, no como falta',
       ],
     ],
   };
@@ -211,6 +228,7 @@ export async function exportarEstadisticas(
       { titulo: 'Asistencias', ancho: 72, alinear: 'right' },
       { titulo: 'Retardos', ancho: 62, alinear: 'right' },
       { titulo: 'Faltas', ancho: 56, alinear: 'right' },
+      { titulo: 'Pendientes', ancho: 66, alinear: 'right' },
       { titulo: '% asistencia', ancho: 78, alinear: 'right' },
     ],
     filas: est.estudiantes_con_mas_faltas.map((e) => [
@@ -221,6 +239,7 @@ export async function exportarEstadisticas(
       e.asistencias,
       e.retardos,
       e.faltas,
+      e.pendientes,
       e.porcentaje_asistencia,
     ]),
   };
@@ -230,6 +249,7 @@ export async function exportarEstadisticas(
     ['Asistencias', est.resumen.asistencias],
     ['Retardos', est.resumen.retardos],
     ['Faltas', est.resumen.faltas],
+    ['Pendientes', est.resumen.pendientes],
     ['% asistencia', est.resumen.porcentaje_asistencia ?? '—'],
   ];
 
