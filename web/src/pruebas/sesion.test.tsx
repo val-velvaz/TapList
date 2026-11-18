@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { pedir } from '../api/cliente';
-import { ADMIN, DOCENTE, llamadas, montar, simularApi, SIN_SESION } from './ayudas';
+import { ADMIN, API_P2_VACIA, DOCENTE, llamadas, montar, simularApi, SIN_SESION } from './ayudas';
 
 const ruta = () => screen.getByTestId('ruta-actual').textContent;
 const conSesion = (usuario: typeof DOCENTE) => ({ status: 200, cuerpo: { usuario } });
@@ -31,7 +31,7 @@ describe('Rutas protegidas', () => {
   it('con la sesión abierta, «/» y «/login» llevan al inicio de cada rol', async () => {
     for (const [usuario, inicio] of [[DOCENTE, '/asistencias'], [ADMIN, '/estudiantes']] as const) {
       for (const entrada of ['/', '/login']) {
-        simularApi({ 'GET /api/auth/me': conSesion(usuario) });
+        simularApi({ ...API_P2_VACIA, 'GET /api/auth/me': conSesion(usuario) });
         const { unmount } = montar(entrada);
         await waitFor(() => expect(ruta(), `${usuario.rol} en ${entrada}`).toBe(inicio));
         unmount();
@@ -66,8 +66,8 @@ describe('Rutas protegidas', () => {
   it('mientras se consulta la sesión no se muestra ni el login ni la pantalla', async () => {
     let responder!: (respuesta: Response) => void;
     const pendiente = new Promise<Response>((resolver) => (responder = resolver));
-    const api = simularApi({});
-    api.mockReturnValue(pendiente);
+    const api = simularApi(API_P2_VACIA);
+    api.mockReturnValueOnce(pendiente);
     montar('/asistencias');
 
     expect(screen.getByText('Cargando…')).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('Rutas protegidas', () => {
 
 describe('Cierre y pérdida de la sesión', () => {
   it('«Cerrar sesión» llama a la API y regresa al login', async () => {
-    const api = simularApi({ 'GET /api/auth/me': conSesion(DOCENTE), 'POST /api/auth/logout': { status: 204 } });
+    const api = simularApi({ ...API_P2_VACIA, 'GET /api/auth/me': conSesion(DOCENTE), 'POST /api/auth/logout': { status: 204 } });
     montar('/asistencias');
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Cerrar sesión' }));
 
@@ -102,11 +102,11 @@ describe('Cierre y pérdida de la sesión', () => {
   });
 
   it('un 401 en cualquier llamada posterior manda al login y avisa que la sesión terminó', async () => {
-    simularApi({ 'GET /api/auth/me': conSesion(DOCENTE), 'GET /api/asistencias': SIN_SESION });
+    simularApi({ ...API_P2_VACIA, 'GET /api/auth/me': conSesion(DOCENTE), 'GET /api/otra': SIN_SESION });
     montar('/asistencias');
-    await screen.findByRole('heading', { name: 'Consulta de asistencias' });
+    await screen.findByText('Mostrando 0 de 0 registros');
 
-    await expect(pedir('/api/asistencias')).rejects.toMatchObject({ status: 401 });
+    await expect(pedir('/api/otra')).rejects.toMatchObject({ status: 401 });
 
     await waitFor(() => expect(ruta()).toBe('/login'));
     expect(screen.getByText('Tu sesión terminó. Inicia sesión de nuevo.')).toBeInTheDocument();
@@ -114,6 +114,7 @@ describe('Cierre y pérdida de la sesión', () => {
 
   it('un 403 o un 404 no cierran la sesión', async () => {
     simularApi({
+      ...API_P2_VACIA,
       'GET /api/auth/me': conSesion(DOCENTE),
       'GET /api/estudiantes': { status: 403, cuerpo: { error: 'No tienes permiso' } },
       'GET /api/asistencias/9': { status: 404, cuerpo: { error: 'No encontrado' } },

@@ -353,3 +353,256 @@ a,
     padding: 20px 16px;
   }
 }
+
+/* ---------- P2 · Consulta de asistencias ---------- */
+:root {
+  --verde-fondo: #dff3e4;
+  --verde-texto: #1b6b34;
+  --ambar-fondo: #fdf0c8;
+  --ambar-texto: #8a5a00;
+  --gris-fondo: #e9ecf1;
+  --gris-texto: #4c5562;
+  --encabezado-tabla: #f3f4f6;
+}
+
+.p2__cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+
+.p2__cabecera .subtitulo {
+  margin-bottom: 12px;
+}
+
+.en-vivo {
+  margin: 0 0 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--texto-suave);
+}
+
+.en-vivo--en_vivo {
+  color: var(--verde-texto);
+}
+
+.en-vivo--reconectando {
+  color: var(--ambar-texto);
+}
+
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+  padding: 14px 18px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.filtro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  flex: 1 1 120px;
+}
+
+.filtro--ancho {
+  flex: 1.6 1 170px;
+}
+
+.filtro label {
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+}
+
+.filtro select,
+.filtro input {
+  height: 40px;
+  font: inherit;
+  padding: 0 10px;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+.filtro input::placeholder {
+  color: var(--marcador);
+}
+
+.filtro input[aria-invalid='true'] {
+  border-color: var(--error-texto);
+}
+
+.filtros__acciones {
+  display: flex;
+  gap: 10px;
+}
+
+.filtros__acciones .boton {
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.filtros__error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.p2__barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0 10px;
+}
+
+.p2__conteo {
+  margin: 0;
+  color: var(--texto-suave);
+}
+
+.p2__exportar {
+  display: flex;
+  gap: 10px;
+}
+
+.p2 .aviso {
+  margin: 0 0 12px;
+}
+
+.tabla-contenedor {
+  overflow-x: auto;
+}
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.tabla[aria-busy='true'] tbody {
+  opacity: 0.6;
+}
+
+.tabla th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-suave);
+  background: var(--encabezado-tabla);
+  border-bottom: 2px solid var(--borde);
+  white-space: nowrap;
+}
+
+.tabla td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--borde-suave);
+  white-space: nowrap;
+}
+
+.tabla__vacia {
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+.etiqueta {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+.etiqueta--asistencia {
+  background: var(--verde-fondo);
+  color: var(--verde-texto);
+}
+
+.etiqueta--retardo {
+  background: var(--ambar-fondo);
+  color: var(--ambar-texto);
+}
+
+.etiqueta--falta {
+  background: var(--error-fondo);
+  color: var(--error-texto);
+}
+
+.etiqueta--pendiente {
+  background: var(--gris-fondo);
+  color: var(--gris-texto);
+}
+
+.paginacion {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.paginacion__texto {
+  margin-right: 4px;
+  color: var(--texto-suave);
+}
+
+.paginacion__boton {
+  min-width: 32px;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--texto);
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.paginacion__boton--actual {
+  color: #fff;
+  background: var(--azul);
+  border-color: var(--azul);
+}
+
+.paginacion__salto {
+  padding: 0 4px;
+  color: var(--texto-suave);
+}
+
+@media (max-width: 640px) {
+  .filtros {
+    padding: 12px;
+  }
+
+  .filtro,
+  .filtro--ancho {
+    flex: 1 1 140px;
+  }
+
+  .filtros__acciones {
+    flex-basis: 100%;
+  }
+
+  .filtros__acciones .boton {
+    flex: 1;
+  }
+
+  .p2__exportar {
+    width: 100%;
+  }
+
+  .p2__exportar .boton {
+    flex: 1;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
