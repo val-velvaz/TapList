@@ -1,20 +1,23 @@
+import { env } from '../../config/env.js';
 import { pool } from '../../db/pool.js';
 import { ORDEN_ES } from '../../db/orden.js';
 import { verificarFiltrosPropios } from '../asistencias/asistencias.service.js';
+import { cteRegistros } from '../asistencias/registros.js';
+import { aMomentoLocal } from '../lecturas/tiempo.js';
 import type { FiltrosEstadisticas } from './estadisticas.schemas.js';
 
 /**
  * Estadísticas de asistencia de P3 (RF-16), por grupo, clase y periodo.
  *
- * Definiciones (ver README, «Cómo se calculan las faltas»):
+ * Se calculan sobre los mismos registros que la lista de P2 (ver
+ * asistencias/registros.ts), así que los totales coinciden por construcción:
  *  - Sesión: un par (clase, fecha) del periodo, hasta hoy, en el que al menos
- *    una credencial registró asistencia. Un día sin ningún registro (festivo,
- *    vacaciones, clase cancelada o lector descompuesto) no cuenta como clase,
- *    así que nunca genera faltas.
- *  - Esperados en una sesión: los estudiantes inscritos en el grupo ese día
- *    según inscripcion_grupo, sin contar el día del alta ni el de la baja o
- *    cambio de grupo (desde < fecha < hasta), más quien sí registró ese día.
- *  - Falta: un esperado sin registro en la sesión.
+ *    una credencial registró asistencia.
+ *  - Cada estudiante esperado en una sesión queda como Asistencia, Retardo,
+ *    Falta o Pendiente (todavía puede registrar: la ventana sigue abierta).
+ *  - Esperados: asistencias + retardos + faltas. Un Pendiente todavía no es
+ *    falta ni asistencia, así que no cuenta en los esperados ni en el
+ *    porcentaje; se informa aparte en `pendientes`.
  *  - Porcentaje de asistencia: (asistencias + retardos) / esperados × 100.
  */
 
@@ -24,6 +27,8 @@ export interface Conteo {
   asistencias: number;
   retardos: number;
   faltas: number;
+  /** Ausentes en una sesión cuya ventana de registro sigue abierta. */
+  pendientes: number;
   /** Con un decimal; null si no hubo esperados. */
   porcentaje_asistencia: number | null;
 }
@@ -44,103 +49,79 @@ export interface Estadisticas {
     asistencias: number;
     retardos: number;
     faltas: number;
+    pendientes: number;
     porcentaje_asistencia: number | null;
   }>;
 }
 
-// Columnas de conteo sobre el CTE "detalle" (una fila por estudiante esperado
-// en cada sesión, con estado NULL si faltó).
+// Conteos sobre las filas de "registros" (alias d).
+const ESPERADOS = `count(*) FILTER (WHERE d.estado <> 'Pendiente')`;
+const POR_ESTUDIANTE = `
+  ${ESPERADOS}::int                                         AS esperados,
+  count(*) FILTER (WHERE d.estado = 'Asistencia')::int      AS asistencias,
+  count(*) FILTER (WHERE d.estado = 'Retardo')::int         AS retardos,
+  count(*) FILTER (WHERE d.estado = 'Falta')::int           AS faltas,
+  count(*) FILTER (WHERE d.estado = 'Pendiente')::int       AS pendientes,
+  round(100.0 * count(*) FILTER (WHERE d.estado IN ('Asistencia', 'Retardo'))
+        / nullif(${ESPERADOS}, 0), 1)::float8               AS porcentaje_asistencia`;
 const CONTEO = `
-  count(DISTINCT (d.id_clase, d.fecha))::int                 AS sesiones,
-  count(*)::int                                              AS esperados,
-  count(*) FILTER (WHERE d.estado = 'Asistencia')::int       AS asistencias,
-  count(*) FILTER (WHERE d.estado = 'Retardo')::int          AS retardos,
-  count(*) FILTER (WHERE d.estado IS NULL)::int              AS faltas,
-  round(100.0 * count(d.estado) / nullif(count(*), 0), 1)::float8 AS porcentaje_asistencia`;
+  count(DISTINCT (d.id_clase, d.fecha))::int                AS sesiones,
+  ${POR_ESTUDIANTE}`;
 
-const CONSULTA = `
-WITH periodo AS (
-  SELECT $2::date AS desde, least($3::date, current_date) AS hasta
-),
-clases AS (
-  SELECT c.id_clase, c.id_grupo, c.materia, c.dia_semana
-    FROM clase c
-   WHERE c.id_docente = $1
-     AND ($4::int IS NULL OR c.id_grupo = $4)
-     AND ($5::int IS NULL OR c.id_clase = $5)
-),
-sesiones AS (
-  SELECT DISTINCT a.id_clase, a.fecha
-    FROM asistencia a
-    JOIN clases c ON c.id_clase = a.id_clase, periodo p
-   WHERE a.fecha BETWEEN p.desde AND p.hasta
-     AND extract(isodow FROM a.fecha) = c.dia_semana
-),
-esperados AS (
-  SELECT s.id_clase, s.fecha, i.id_estudiante
-    FROM sesiones s
-    JOIN clases c ON c.id_clase = s.id_clase
-    JOIN inscripcion_grupo i
-      ON i.id_grupo = c.id_grupo
-     AND i.desde < s.fecha
-     AND (i.hasta IS NULL OR i.hasta > s.fecha)
-  UNION
-  SELECT a.id_clase, a.fecha, a.id_estudiante
-    FROM asistencia a
-    JOIN sesiones s ON s.id_clase = a.id_clase AND s.fecha = a.fecha
-),
-detalle AS (
-  SELECT e.id_clase, e.fecha, e.id_estudiante, a.estado
-    FROM esperados e
-    LEFT JOIN asistencia a
-      ON a.id_clase = e.id_clase AND a.fecha = e.fecha AND a.id_estudiante = e.id_estudiante
-)
+/** P3: estadísticas de las clases del docente. Un grupo o clase ajenos responden 404. */
+export async function calcularEstadisticas(
+  idDocente: number,
+  filtros: FiltrosEstadisticas,
+  ahora: Date = new Date(),
+): Promise<Estadisticas> {
+  await verificarFiltrosPropios(idDocente, filtros);
+
+  // Un periodo que llega al futuro se recorta a hoy, en la zona de la escuela.
+  const hoy = aMomentoLocal(ahora, env.ZONA_HORARIA_ESCUELA).fecha;
+  const hasta = filtros.hasta < hoy ? filtros.hasta : hoy;
+
+  const parametros: unknown[] = [];
+  const parametro = (valor: unknown) => `$${parametros.push(valor)}`;
+  const cte = cteRegistros(
+    { idDocente, idGrupo: filtros.id_grupo, idClase: filtros.id_clase, desde: filtros.desde, hasta, ahora },
+    parametro,
+  );
+  const top = parametro(filtros.top);
+  const idGrupo = parametro(filtros.id_grupo ?? null);
+  const idClase = parametro(filtros.id_clase ?? null);
+
+  const { rows } = await pool.query(
+    `WITH ${cte}
 SELECT
-  (SELECT json_build_object('desde', to_char(desde, 'YYYY-MM-DD'), 'hasta', to_char(hasta, 'YYYY-MM-DD')) FROM periodo) AS periodo,
-  (SELECT row_to_json(r) FROM (SELECT ${CONTEO} FROM detalle d) r) AS resumen,
+  (SELECT row_to_json(r) FROM (SELECT ${CONTEO} FROM registros d) r) AS resumen,
   (SELECT coalesce(json_agg(r ORDER BY r.semana), '[]') FROM (
      SELECT to_char(date_trunc('week', d.fecha), 'YYYY-MM-DD') AS semana, ${CONTEO}
-       FROM detalle d GROUP BY date_trunc('week', d.fecha)) r) AS por_semana,
+       FROM registros d GROUP BY date_trunc('week', d.fecha)) r) AS por_semana,
   (SELECT coalesce(json_agg(r ORDER BY r.grupo->>'nombre' ${ORDEN_ES}, r.clase->>'materia' ${ORDEN_ES}, (r.clase->>'id')::int), '[]') FROM (
      SELECT json_build_object('id', c.id_clase, 'materia', c.materia) AS clase,
             json_build_object('id', g.id_grupo, 'nombre', g.nombre) AS grupo,
             ${CONTEO}
-       FROM detalle d
+       FROM registros d
        JOIN clases c ON c.id_clase = d.id_clase
        JOIN grupo g ON g.id_grupo = c.id_grupo
       GROUP BY c.id_clase, c.materia, g.id_grupo, g.nombre) r) AS por_clase,
   (SELECT coalesce(json_agg(r ORDER BY r.faltas DESC, r.retardos DESC, r.estudiante->>'apellidos' ${ORDEN_ES}, r.estudiante->>'nombre' ${ORDEN_ES}, (r.estudiante->>'id')::int), '[]') FROM (
      SELECT json_build_object('id', e.id_estudiante, 'matricula', e.matricula, 'nombre', e.nombre,
                               'apellidos', e.apellidos, 'activo', e.activo) AS estudiante,
-            count(*)::int                                        AS esperados,
-            count(*) FILTER (WHERE d.estado = 'Asistencia')::int AS asistencias,
-            count(*) FILTER (WHERE d.estado = 'Retardo')::int    AS retardos,
-            count(*) FILTER (WHERE d.estado IS NULL)::int        AS faltas,
-            round(100.0 * count(d.estado) / nullif(count(*), 0), 1)::float8 AS porcentaje_asistencia
-       FROM detalle d
+            ${POR_ESTUDIANTE}
+       FROM registros d
        JOIN estudiante e ON e.id_estudiante = d.id_estudiante
       GROUP BY e.id_estudiante
-     HAVING count(*) FILTER (WHERE d.estado IS NULL) > 0
+     HAVING count(*) FILTER (WHERE d.estado = 'Falta') > 0
       ORDER BY faltas DESC, retardos DESC, e.apellidos ${ORDEN_ES}, e.nombre ${ORDEN_ES}, e.id_estudiante
-      LIMIT $6) r) AS estudiantes_con_mas_faltas,
-  (SELECT json_build_object('id', g.id_grupo, 'nombre', g.nombre) FROM grupo g WHERE g.id_grupo = $4) AS grupo,
-  (SELECT json_build_object('id', c.id_clase, 'materia', c.materia) FROM clase c WHERE c.id_clase = $5) AS clase`;
-
-/** P3: estadísticas de las clases del docente. Un grupo o clase ajenos responden 404. */
-export async function calcularEstadisticas(idDocente: number, filtros: FiltrosEstadisticas): Promise<Estadisticas> {
-  await verificarFiltrosPropios(idDocente, filtros);
-
-  const { rows } = await pool.query(CONSULTA, [
-    idDocente,
-    filtros.desde,
-    filtros.hasta,
-    filtros.id_grupo ?? null,
-    filtros.id_clase ?? null,
-    filtros.top,
-  ]);
+      LIMIT ${top}) r) AS estudiantes_con_mas_faltas,
+  (SELECT json_build_object('id', g.id_grupo, 'nombre', g.nombre) FROM grupo g WHERE g.id_grupo = ${idGrupo}::int) AS grupo,
+  (SELECT json_build_object('id', c.id_clase, 'materia', c.materia) FROM clase c WHERE c.id_clase = ${idClase}::int) AS clase`,
+    parametros,
+  );
   const fila = rows[0];
   return {
-    periodo: fila.periodo,
+    periodo: { desde: filtros.desde, hasta },
     filtros: { grupo: fila.grupo, clase: fila.clase },
     resumen: fila.resumen,
     por_semana: fila.por_semana,

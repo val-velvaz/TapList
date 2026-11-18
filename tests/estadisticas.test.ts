@@ -184,12 +184,14 @@ const OCTUBRE = { desde: '2026-10-01', hasta: '2026-10-31' };
 const estadisticas = (cookie: string, query: Record<string, string | number> = {}) =>
   request(app).get('/api/estadisticas').set('Cookie', cookie).query({ ...OCTUBRE, ...query });
 
+// En octubre todas las ventanas de registro ya cerraron: no hay pendientes.
 const conteo = (sesiones: number, esperados: number, asistencias: number, retardos: number, faltas: number, porcentaje: number | null) => ({
   sesiones,
   esperados,
   asistencias,
   retardos,
   faltas,
+  pendientes: 0,
   porcentaje_asistencia: porcentaje,
 });
 
@@ -241,6 +243,7 @@ describe('Estadísticas (RF-16) con resultados calculados a mano', () => {
       asistencias,
       retardos,
       faltas,
+      pendientes: 0,
       porcentaje_asistencia: porcentaje,
     });
     expect(res.body.estudiantes_con_mas_faltas).toEqual([
@@ -391,7 +394,7 @@ describe('Exportación de estadísticas', () => {
 
     const semanas = hojas['Por semana']!.slice(2).filter((f) => f.length > 1);
     expect(semanas).toEqual(
-      json.por_semana.map((s: Record<string, unknown>) => [s.semana, s.sesiones, s.esperados, s.asistencias, s.retardos, s.faltas, s.porcentaje_asistencia]),
+      json.por_semana.map((s: Record<string, unknown>) => [s.semana, s.sesiones, s.esperados, s.asistencias, s.retardos, s.faltas, s.pendientes, s.porcentaje_asistencia]),
     );
     const masFaltas = hojas['Más faltas']!.slice(2).filter((f) => f.length > 1);
     expect(masFaltas.map((f) => f[0])).toEqual(
@@ -421,7 +424,8 @@ describe('Exportación de estadísticas', () => {
 });
 
 describe('Exportación de la lista de asistencias', () => {
-  const filtrosC1 = { id_clase: 0, ...OCTUBRE };
+  // C1 del 12 al 31 de octubre: 2 sesiones con 4 lecturas y 4 faltas (ver el encabezado).
+  const filtrosC1 = { id_clase: 0, desde: '2026-10-12', hasta: '2026-10-31' };
   beforeAll(() => {
     filtrosC1.id_clase = ids.C1!;
   });
@@ -431,19 +435,23 @@ describe('Exportación de la lista de asistencias', () => {
     const res = await descargar('/api/asistencias/exportar', { ...filtrosC1, formato: 'xlsx' });
 
     expect(res.status).toBe(200);
-    expect(res.headers['content-disposition']).toBe('attachment; filename=asistencias_C1-Lunes_2026-10-01_a_2026-10-31.xlsx');
+    expect(res.headers['content-disposition']).toBe('attachment; filename=asistencias_C1-Lunes_2026-10-12_a_2026-10-31.xlsx');
 
     const filas = (await hojasXlsx(res.body)).Asistencias!;
     const inicio = filas.findIndex((f) => f[0] === 'Fecha') + 1;
     const datos = filas.slice(inicio).filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(String(f[0])));
-    expect(json.total).toBe(9);
+    expect(json.total).toBe(8);
     expect(datos).toHaveLength(json.total);
     expect(datos.map((f) => [f[0], f[2], f[3]])).toEqual(
       json.datos.map((a: { fecha: string; estado: string; estudiante: { matricula: string } }) => [a.fecha, a.estado, a.estudiante.matricula]),
     );
-    expect(valorDe(filas, 'Total de registros')).toBe(9);
-    expect(valorDe(filas, 'Asistencias')).toBe(7);
-    expect(valorDe(filas, 'Retardos')).toBe(2);
+    // Una falta no tiene hora ni lector.
+    expect(datos.filter((f) => f[2] === 'Falta').map((f) => [f[1], f[8]])).toEqual(Array(4).fill(['—', '—']));
+    expect(valorDe(filas, 'Total de registros')).toBe(8);
+    expect(valorDe(filas, 'Asistencias')).toBe(3);
+    expect(valorDe(filas, 'Retardos')).toBe(1);
+    expect(valorDe(filas, 'Faltas')).toBe(4);
+    expect(valorDe(filas, 'Pendientes')).toBe(0);
     expect(valorDe(filas, 'Clase')).toBe('C1 Lunes');
     expect(JSON.stringify(filas)).not.toMatch(new RegExp(uids.join('|')));
   });
@@ -452,17 +460,19 @@ describe('Exportación de la lista de asistencias', () => {
     const res = await descargar('/api/asistencias/exportar', { ...filtrosC1, formato: 'pdf' });
     expect(res.status).toBe(200);
     const texto = await textoPdf(res.body);
-    expect(texto).toContain('Total de registros: 9');
-    expect(texto).toContain('Asistencias: 7');
-    expect(texto).toContain('Retardos: 2');
+    expect(texto).toContain('Total de registros: 8');
+    expect(texto).toContain('Asistencias: 3');
+    expect(texto).toContain('Retardos: 1');
+    expect(texto).toContain('Faltas: 4');
     expect(texto).not.toMatch(new RegExp(uids.join('|')));
   });
 
   it(`más de ${env.EXPORTACION_MAX_FILAS} filas: 422 con un mensaje claro, sin archivo`, async () => {
     const res = await request(app).get('/api/asistencias/exportar').set('Cookie', cookies.E).query({ formato: 'pdf' });
     expect(res.status).toBe(422);
-    // Sin filtro de fechas: los 16 registros de octubre más el del 28 de septiembre.
-    expect(res.body.error).toBe(`La exportación tendría 17 filas y el máximo es ${env.EXPORTACION_MAX_FILAS}. Acota el periodo o los filtros.`);
+    // Sin filtro de fechas: las 16 lecturas y las 10 faltas de octubre, más la sesión de C1 del
+    // 28 de septiembre (S1 registró; faltaron S2, S3, S5 y S8): 16 + 10 + 1 + 4 = 31.
+    expect(res.body.error).toBe(`La exportación tendría 31 filas y el máximo es ${env.EXPORTACION_MAX_FILAS}. Acota el periodo o los filtros.`);
   });
 
   it('formato inválido u omitido: 400; filtros ajenos: 404', async () => {

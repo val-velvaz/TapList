@@ -1,8 +1,10 @@
 import { pool } from '../../db/pool.js';
 import { ORDEN_ES } from '../../db/orden.js';
 import { HttpError } from '../../utils/HttpError.js';
+import { condicionesBusquedaEstudiante } from '../../utils/busqueda.js';
 import { armarPagina, type Pagina } from '../../utils/validacion.js';
 import type { FiltrosAsistencias } from './asistencias.schemas.js';
+import { cteRegistros, type EstadoRegistro } from './registros.js';
 
 // Toda consulta de este módulo se limita a las clases del docente
 // (clase.id_docente). Ninguna toca credencial_nfc: la pantalla P2 no
@@ -20,6 +22,20 @@ export interface AsistenciaPublica {
   grupo: { id: number; nombre: string };
   dispositivo: { id: number; nombre_ubicacion: string };
 }
+
+/**
+ * Una fila de la lista de P2. Si el estudiante registró, es una asistencia
+ * con todos sus datos. Si no (Falta o Pendiente), no hay lectura: `id`, `hora`
+ * y `dispositivo` son null.
+ */
+export type RegistroPublico =
+  | AsistenciaPublica
+  | (Omit<AsistenciaPublica, 'id' | 'hora' | 'estado' | 'dispositivo'> & {
+      id: null;
+      hora: null;
+      estado: Extract<EstadoRegistro, 'Falta' | 'Pendiente'>;
+      dispositivo: null;
+    });
 
 interface FilaAsistencia {
   id_asistencia: number;
@@ -111,38 +127,98 @@ export async function verificarFiltrosPropios(
   }
 }
 
-/** P2: asistencias de las clases del docente, de la más reciente a la más antigua. */
-export async function listarAsistencias(idDocente: number, filtros: FiltrosAsistencias): Promise<Pagina<AsistenciaPublica>> {
+type FilaRegistro = Omit<FilaAsistencia, 'id_asistencia' | 'hora' | 'estado' | 'id_dispositivo' | 'nombre_ubicacion'> & {
+  id_asistencia: number | null;
+  hora: string | null;
+  estado: EstadoRegistro;
+  id_dispositivo: number | null;
+  nombre_ubicacion: string | null;
+};
+
+function aRegistroPublico(f: FilaRegistro): RegistroPublico {
+  if (f.estado === 'Asistencia' || f.estado === 'Retardo') return aAsistenciaPublica(f as FilaAsistencia);
+  return {
+    id: null,
+    fecha: f.fecha,
+    hora: null,
+    estado: f.estado,
+    estudiante: {
+      id: f.id_estudiante,
+      matricula: f.matricula,
+      nombre: f.nombre,
+      apellidos: f.apellidos,
+      activo: f.estudiante_activo,
+    },
+    clase: { id: f.id_clase, materia: f.materia, dia_semana: f.dia_semana, hora_inicio: f.hora_inicio },
+    grupo: { id: f.id_grupo, nombre: f.grupo_nombre },
+    dispositivo: null,
+  };
+}
+
+/**
+ * P2: registros de las clases del docente (asistencias, retardos, faltas y
+ * pendientes; ver registros.ts), de la sesión más reciente a la más antigua.
+ * Dentro de una sesión, primero las lecturas, de la más reciente a la más
+ * antigua, y después quien no ha registrado, por apellidos.
+ *
+ * Los filtros de grupo, clase y fechas eligen las sesiones; los de estudiante,
+ * búsqueda y estado eligen filas dentro de ellas, así que una falta siempre se
+ * calcula con la sesión completa.
+ */
+export async function listarAsistencias(
+  idDocente: number,
+  filtros: FiltrosAsistencias,
+  ahora: Date = new Date(),
+): Promise<Pagina<RegistroPublico>> {
   await verificarFiltrosPropios(idDocente, filtros);
 
   const parametros: unknown[] = [];
   const parametro = (valor: unknown) => `$${parametros.push(valor)}`;
-  const condiciones = [`c.id_docente = ${parametro(idDocente)}`];
-  if (filtros.id_clase) condiciones.push(`a.id_clase = ${parametro(filtros.id_clase)}`);
-  if (filtros.id_grupo) condiciones.push(`c.id_grupo = ${parametro(filtros.id_grupo)}`);
-  if (filtros.id_estudiante) condiciones.push(`a.id_estudiante = ${parametro(filtros.id_estudiante)}`);
-  if (filtros.estado) condiciones.push(`a.estado = ${parametro(filtros.estado)}`);
-  if (filtros.desde) condiciones.push(`a.fecha >= ${parametro(filtros.desde)}`);
-  if (filtros.hasta) condiciones.push(`a.fecha <= ${parametro(filtros.hasta)}`);
-  const where = `WHERE ${condiciones.join(' AND ')}`;
+  const cte = cteRegistros(
+    { idDocente, idGrupo: filtros.id_grupo, idClase: filtros.id_clase, desde: filtros.desde, hasta: filtros.hasta, ahora },
+    parametro,
+  );
+
+  const condiciones: string[] = [];
+  if (filtros.id_estudiante) condiciones.push(`r.id_estudiante = ${parametro(filtros.id_estudiante)}`);
+  if (filtros.estado) condiciones.push(`r.estado = ${parametro(filtros.estado)}`);
+  if (filtros.q) condiciones.push(...condicionesBusquedaEstudiante(filtros.q, 'e', parametro));
+  const donde = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
 
   const { rows: conteo } = await pool.query<{ total: string }>(
-    `SELECT count(*) AS total FROM asistencia a JOIN clase c ON c.id_clase = a.id_clase ${where}`,
+    `WITH ${cte}
+     SELECT count(*) AS total
+       FROM registros r
+       JOIN estudiante e ON e.id_estudiante = r.id_estudiante
+     ${donde}`,
     parametros,
   );
   const total = Number(conteo[0]?.total ?? 0);
 
   const limite = parametro(filtros.por_pagina);
   const salto = parametro((filtros.pagina - 1) * filtros.por_pagina);
-  const { rows } = await pool.query<FilaAsistencia>(
-    `${SELECT_ASISTENCIA}
-     ${where}
-     ORDER BY a.fecha DESC, a.hora DESC, a.id_asistencia DESC
+  const { rows } = await pool.query<FilaRegistro>(
+    `WITH ${cte}
+     SELECT a.id_asistencia, to_char(r.fecha, 'YYYY-MM-DD') AS fecha, to_char(a.hora, 'HH24:MI:SS') AS hora, r.estado,
+            e.id_estudiante, e.matricula, e.nombre, e.apellidos, e.activo AS estudiante_activo,
+            c.id_clase, c.materia, c.dia_semana, to_char(c.hora_inicio, 'HH24:MI') AS hora_inicio, c.id_docente,
+            g.id_grupo, g.nombre AS grupo_nombre,
+            d.id_dispositivo, d.nombre_ubicacion
+       FROM registros r
+       JOIN estudiante e ON e.id_estudiante = r.id_estudiante
+       JOIN clase c ON c.id_clase = r.id_clase
+       JOIN grupo g ON g.id_grupo = c.id_grupo
+       LEFT JOIN asistencia a ON a.id_asistencia = r.id_asistencia
+       LEFT JOIN dispositivo d ON d.id_dispositivo = a.id_dispositivo
+     ${donde}
+     ORDER BY r.fecha DESC, c.hora_inicio DESC, c.id_clase DESC,
+              a.hora DESC NULLS LAST, a.id_asistencia DESC,
+              e.apellidos ${ORDEN_ES}, e.nombre ${ORDEN_ES}, e.id_estudiante
      LIMIT ${limite} OFFSET ${salto}`,
     parametros,
   );
 
-  return armarPagina(rows.map(aAsistenciaPublica), total, filtros.pagina, filtros.por_pagina);
+  return armarPagina(rows.map(aRegistroPublico), total, filtros.pagina, filtros.por_pagina);
 }
 
 /** Grupos y clases que imparte el docente, para los selectores de filtros de P2. */
