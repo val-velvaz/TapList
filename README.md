@@ -538,7 +538,7 @@ Hace la petición como el ESP32, con el dispositivo de la semilla y un *timeout*
 🟢  LED verde y 1 pitido corto
 ```
 
-Las clases de la semilla son los lunes, martes y miércoles. En otro día u horario, la respuesta será `SIN_CLASE`. Para probar una asistencia fuera de horario, usa `--leido-en` con una hora de clase de las últimas 24 horas.
+Los estudiantes de la semilla están inscritos desde el 1 de agosto de 2026 (inicio aproximado del ciclo 2026-B), así que una base recién creada ya muestra faltas en P2 y P3. Las clases de la semilla son los lunes, martes y miércoles. En otro día u horario, la respuesta será `SIN_CLASE`. Para probar una asistencia fuera de horario, usa `--leido-en` con una hora de clase de las últimas 24 horas.
 
 ## Gestión de estudiantes
 
