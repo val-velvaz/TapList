@@ -13,9 +13,9 @@ Hasta ahora incluye:
 - La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada de sus clases con asistencias, retardos, faltas y pendientes, filtros (incluida la búsqueda de estudiante por nombre o matrícula) y aviso en tiempo real con SSE.
 - Las **estadísticas y la exportación** para el Docente (P3, AD-05, RF-16 y RF-06): porcentaje de asistencia, retardos y faltas por grupo, clase y periodo, asistencia por semana, estudiantes con más faltas, y exportación a PDF y XLSX.
 
-- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado y las rutas por rol. Ver [Página web](#página-web).
+- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado, las rutas por rol y la consulta de asistencias del Docente (P2) con aviso en vivo y exportación. Ver [Página web](#página-web).
 
-Faltan las pantallas P2 a P5 de la web y el firmware del lector, que programa el equipo.
+Faltan las pantallas P3 a P5 de la web y el firmware del lector, que programa el equipo.
 
 ## Contenido
 
@@ -872,7 +872,7 @@ La web vive en la carpeta `web/`, con su propio `package.json`: **Vite, React, T
 | Entrega | Contenido | Estado |
 |---|---|---|
 | 1 | Proyecto, CI, inicio de sesión (P1), encabezado y rutas por rol | Lista |
-| 2 | Consulta de asistencias (P2) con aviso en vivo y exportación | Pendiente |
+| 2 | Consulta de asistencias (P2) con aviso en vivo y exportación | Lista |
 | 3 | Estadísticas (P3) | Pendiente |
 | 4 | Gestión de estudiantes (P4 y P5) | Pendiente |
 | 5 | Express sirve la web en producción | Pendiente |
@@ -916,7 +916,7 @@ Si la API corre en otra dirección, indícala al arrancar la web con la variable
 |---|---|---|
 | `/login` | P1 · Inicio de sesión | Todos |
 | `/aviso-de-privacidad` | Aviso de privacidad (borrador) | Todos |
-| `/asistencias` | P2 · Consulta de asistencias (en construcción) | Docente |
+| `/asistencias` | P2 · Consulta de asistencias | Docente |
 | `/estadisticas` | P3 · Estadísticas (en construcción) | Docente |
 | `/estudiantes` | P4 · Gestión de estudiantes (en construcción) | Administrador |
 | `/estudiantes/nuevo` | P5 · Agregar estudiante (en construcción) | Administrador |
@@ -946,21 +946,48 @@ Todas las pantallas llaman a la API con una sola función, `pedir` (`web/src/api
 | Pestaña «Asistencias» del Administrador (P4) | No aparece todavía | La consulta de asistencias es solo para Docentes. Se decide en la entrega 4 |
 | «Prof. R. Navarro · Docente» | Nombre y apellidos completos, y el rol | La API no devuelve un nombre abreviado |
 
-Las diferencias de P2 y P3 (filas con «Falta», filtro de estudiante por nombre y tarjeta «Estudiantes en el grupo») se deciden en el plan de su entrega.
+| Filas con «Falta» y filtro de estudiante por nombre (P2) | Iguales al boceto | Se agregaron a la API (`GET /api/asistencias` con faltas, pendientes y `q`) |
+| Estados de P2: Asistencia, Retardo y Falta | Además, «Pendiente» (etiqueta gris) | Quien todavía puede registrar no es falta; ver [Faltas y pendientes](#faltas-y-pendientes) |
+| «Lector: Aula 3» (P2) | El nombre del dispositivo, por ejemplo «Módulo X, aula 101» | Es el `nombre_ubicacion` que se registró para el lector |
+| Fechas «10/10/2026» en los filtros (P2) | Campo de fecha del navegador | Se muestra en el formato del idioma del navegador; en español, día/mes/año |
+
+La tarjeta «Estudiantes en el grupo» de P3 se decide en el plan de la entrega 3.
+
+### P2 · Consulta de asistencias
+
+- **Filtros:** Grupo, Clase (solo las del grupo elegido), Estudiante (texto: nombre o matrícula, sin acentos), Estado (Asistencia, Retardo, Pendiente o Falta), Desde y Hasta. «Buscar» los aplica y «Limpiar» vuelve a **la última semana sin filtros**, que es también lo que se ve al entrar.
+- **Los filtros viven en la dirección de la página** (`/asistencias?id_grupo=1&estado=Falta…`): sobreviven a una recarga y se pueden guardar como favorito.
+- **Tabla:** estudiante, grupo, clase, fecha (`dd/mm/aaaa`), hora, estado y lector, con 20 filas por página. Faltas y pendientes muestran «—» en hora y lector.
+- **En vivo (RNF-01):** la página abre `EventSource('/api/asistencias/eventos')` (`useEnVivo.ts`).
+
+  | Evento o situación | Qué hace la web |
+  |---|---|
+  | `conectado` | Indicador «En vivo». Si era una reconexión, vuelve a pedir la lista |
+  | `asistencia` | Vuelve a pedir la lista (varias lecturas seguidas, una sola vez, a los 300 ms) y muestra «última lectura hace N s» |
+  | `sesion_terminada` | Cierra la conexión y lleva al login con «Tu sesión terminó» |
+  | Corte de red | «Reconectando…»; el navegador reintenta solo |
+  | El navegador deja de reintentar | «Sin actualización automática»; revisa la sesión y abre otra conexión a los 10 s |
+
+- **Pendientes que vencen:** un pendiente pasa a falta sin que llegue ninguna lectura, así que mientras haya pendientes en pantalla la lista se vuelve a pedir cada minuto.
+- **Exportar PDF o XLSX:** usa los filtros aplicados y el nombre de archivo que propone la API. Si pasa de `EXPORTACION_MAX_FILAS` (`422`), pide acotar los filtros.
+- **Teléfono:** los filtros se acomodan en dos columnas y la tabla se desplaza de lado, sin ensanchar la página.
 
 ### Pruebas de la web
 
-Hay 33 pruebas en tres archivos de `web/src/pruebas/`, con Vitest y Testing Library. Montan la aplicación completa y sustituyen `fetch` por una API simulada; una llamada que la prueba no espera la hace fallar.
+Hay 56 pruebas en cuatro archivos de `web/src/pruebas/`, con Vitest y Testing Library. Montan la aplicación completa y sustituyen `fetch` por una API simulada; una llamada que la prueba no espera la hace fallar.
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
 | `login.test.tsx` | 14 | Los elementos del boceto, la entrada de cada rol a su pantalla, `redirigirA` externo, `401`, `429`, `400` por campo, sin red, `500`, validación sin llamar a la API, Mostrar/Ocultar, «¿Olvidaste tu contraseña?», el aviso de privacidad y que no se guarda nada en el navegador |
 | `sesion.test.tsx` | 11 | Rutas protegidas sin sesión, sesión ya abierta, inicio por rol, «Sin permiso» en ambos sentidos, página no encontrada, estado de carga, cierre de sesión, y que un `401` posterior lleva al login mientras que un `403` o un `404` no |
+| `asistencias.test.tsx` | 23 | P2: los elementos del boceto con una fila de cada estado, la semana por defecto, filtros desde la dirección y con «Buscar» y «Limpiar», clases según el grupo, fechas invertidas, paginación, lista vacía, en vivo (conexión, lectura nueva, reconexión, `sesion_terminada`, reintento tras un corte definitivo y cierre al salir), refresco de pendientes, exportación con filtros y `422`, `404`, sin red y `401`. El SSE se simula con `EventSourceFalso` |
 | `cliente.test.ts` | 8 | `pedir`: JSON, `204`, mensajes y detalles de la API, mensajes propios por código, sin red, petición cancelada y aviso de pérdida de sesión solo con `401`; y `rutaDeInicio` |
 
-Para confirmar que detectan errores reales, se rompió el código a propósito tres veces: sin revisar el rol en `RutaProtegida` fallaron 2 pruebas; sin avisar del `401`, 2; y aceptando cualquier `redirigirA`, 1.
+Para confirmar que detectan errores reales, se rompió el código a propósito tres veces en la entrega 1: sin revisar el rol en `RutaProtegida` fallaron 2 pruebas; sin avisar del `401`, 2; y aceptando cualquier `redirigirA`, 1. En la entrega 2, siete veces, y cada una hizo fallar al menos una prueba: una lectura nueva que no recarga la lista, pendientes que no se refrescan, `sesion_terminada` que no cierra la sesión, una reconexión que no recarga, una exportación sin filtros, la semana por defecto un día más larga y «Pendiente» pintado como «Falta».
 
 Además, la entrega 1 se probó a mano en un navegador contra la API real con la semilla: entrada de los dos roles, mensaje de credenciales incorrectas, recarga con la sesión abierta, «Sin permiso» y cierre de sesión. La cookie llegó como `httpOnly` y `SameSite=Strict`, y `document.cookie` quedó vacío.
+
+La entrega 2 se probó igual, con la semilla y lecturas del simulador: los cuatro estados en la tabla, una lectura nueva que cambió una fila de «Pendiente» a «Retardo» en menos de un segundo sin recargar la página, la búsqueda «ramirez» (sin acento), la descarga del PDF con el filtro aplicado y la vista en un teléfono de 390 px.
 
 ## Decisiones técnicas
 
@@ -1091,8 +1118,11 @@ web/                         página web (Vite, React y TypeScript), con su prop
   vite.config.ts             proxy de /api en desarrollo y configuración de las pruebas
   src/api/cliente.ts         pedir(): única puerta hacia la API, con el manejo común de errores
   src/sesion/                ContextoSesion (usuario actual, entrar y salir) y rutas de inicio por rol
-  src/componentes/           Marco (encabezado y menú) y RutaProtegida
+  src/api/asistencias.ts     tipos y llamadas de P2 (lista, filtros y exportación)
+  src/componentes/           Marco (encabezado y menú), RutaProtegida y Paginacion
   src/paginas/               Login (P1), AvisoPrivacidad, SinPermiso, NoEncontrada y EnConstruccion
+  src/paginas/asistencias/   Asistencias (P2) y useEnVivo (SSE)
+  src/utilidades/fechas.ts   fechas y horas para mostrar y para los filtros
   src/pruebas/               pruebas de la web
 ```
 
