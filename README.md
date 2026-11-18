@@ -10,7 +10,7 @@ Hasta ahora incluye:
 - La **autenticación web**: inicio y cierre de sesión, consulta del usuario actual y middleware de sesión y de rol.
 - El **registro de asistencia por NFC**: autenticación de los lectores ESP32, el endpoint de lecturas con la lógica del diagrama de actividades AD-03, soporte para lecturas guardadas sin conexión y un simulador para probar sin el dispositivo.
 - La **gestión de estudiantes** para el Administrador (P4, P5, AD-06 y AD-07): consulta paginada con búsqueda, alta, vinculación y reemplazo de credenciales NFC y baja lógica, todo con bitácora.
-- La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada con filtros, solo de sus clases, y aviso en tiempo real con SSE.
+- La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada de sus clases con asistencias, retardos, faltas y pendientes, filtros (incluida la búsqueda de estudiante por nombre o matrícula) y aviso en tiempo real con SSE.
 - Las **estadísticas y la exportación** para el Docente (P3, AD-05, RF-16 y RF-06): porcentaje de asistencia, retardos y faltas por grupo, clase y periodo, asistencia por semana, estudiantes con más faltas, y exportación a PDF y XLSX.
 
 - La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado y las rutas por rol. Ver [Página web](#página-web).
@@ -195,7 +195,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 176 pruebas en ocho archivos:
+La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 191 pruebas en nueve archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -206,6 +206,7 @@ La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). 
 | `tests/asistencias.test.ts` | 18 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
 | `tests/estadisticas.test.ts` | 19 | Estadísticas con un mes de datos fijos y resultados calculados a mano, y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
 | `tests/orden.test.ts` | 10 | Orden alfabético en español de todas las listas (P2, P3, P4, P5, XLSX y PDF) con la base en configuración «C»: acentos, «ñ», minúsculas y empates en «más faltas». |
+| `tests/faltas.test.ts` | 15 | Faltas y pendientes con el reloj fijo antes, durante y después de la ventana de registro, con los mismos totales en P2, P3 y las exportaciones; y la búsqueda de estudiante de P2. |
 | `tests/uid.test.ts` | 24 | Formato canónico del UID: lo que `esquemaUid` acepta (4, 7 y 10 bytes con mayúsculas, minúsculas, espacios y dos puntos) y lo que rechaza (decimal, ceros perdidos, truncado), y el análisis de `npm run uid:revisar`. |
 
 En las pruebas, `vitest.config.ts` cambia dos valores:
@@ -338,6 +339,22 @@ El encabezado de la prueba tiene los datos y el orden esperado junto al orden in
 | XLSX y PDF | El mismo orden que el endpoint |
 
 Para confirmar que detectan el error, se quitó a propósito la colación de `ORDEN_ES`: fallaron 10 pruebas (9 de este archivo y la de paginación de `estudiantes.test.ts`).
+
+### Faltas y pendientes (`faltas.test.ts`)
+
+El encabezado de la prueba describe el escenario. El reloj de la API se fija con `vi.setSystemTime` y avanza durante el lunes 16 de noviembre, en una clase de las 08:00 con 10 minutos de tolerancia (la ventana cierra a las 09:00):
+
+| Momento | Qué se comprueba |
+|---|---|
+| 07:40 | Todavía no hay sesión ese día; la sesión de la semana anterior ya tiene faltas |
+| 07:56 (registró uno) | Los demás aparecen como `Pendiente`, sin hora ni lector. P3 no los cuenta como falta ni en el porcentaje |
+| 08:30 | Orden de la lista: lecturas de la más reciente a la más antigua y luego pendientes por apellidos. «Más faltas» no cuenta lo pendiente |
+| 09:00:59 | El último minuto de la ventana: siguen pendientes |
+| 09:01 | Los pendientes pasan a `Falta` en P2, P3 y las exportaciones |
+
+En cada momento, `totalesCoinciden` compara la lista de P2 con el resumen de P3 y con los totales de los cuatro archivos (PDF y XLSX de P2 y de P3). Además: una clase a las 23:30 que sigue pendiente hasta las 00:30 del día siguiente, una tolerancia de 75 minutos (mayor que `MINUTOS_MAX_REGISTRO`), el filtro de estado con `Falta` y `Pendiente`, el aislamiento con otro docente del mismo grupo y la búsqueda `q` (sin acentos, por palabras, por matrícula, con `%` y `_` literales, y solo en las clases del docente).
+
+Para confirmar que detectan errores reales, se rompió el código a propósito seis veces, y cada vez fallaron pruebas: sin pendientes (6), con el último minuto como falta (3), sin la tolerancia en la ventana (2), con el reloj de PostgreSQL en lugar del de la API (14), con P3 contando los pendientes como faltas (5) y con la búsqueda sensible a los acentos (2).
 
 ### Formato del UID (`uid.test.ts`)
 
@@ -660,12 +677,15 @@ Pantalla P2 y diagrama de actividades AD-04. Todo el módulo exige `requiereSesi
 
 ### Lista (P2)
 
-`GET /api/asistencias?id_grupo=&id_clase=&id_estudiante=&estado=&desde=&hasta=&pagina=&por_pagina=`
+`GET /api/asistencias?id_grupo=&id_clase=&id_estudiante=&q=&estado=&desde=&hasta=&pagina=&por_pagina=`
+
+La lista tiene **una fila por estudiante esperado en cada sesión**, no solo las lecturas: quien registró aparece con `Asistencia` o `Retardo`, y quien no, con `Pendiente` o `Falta` (ver [Faltas y pendientes](#faltas-y-pendientes)).
 
 | Parámetro | Valores |
 |---|---|
 | `id_grupo`, `id_clase`, `id_estudiante` | Ids; deben ser del docente (si no, `404`) |
-| `estado` | `Asistencia` o `Retardo` |
+| `q` | Texto, hasta 100 caracteres. Busca por nombre, apellidos o matrícula, por palabras y sin distinguir mayúsculas ni acentos, igual que en P4. Solo dentro de las clases del docente: un estudiante ajeno simplemente no aparece |
+| `estado` | `Asistencia`, `Retardo`, `Falta` o `Pendiente` |
 | `desde`, `hasta` | `YYYY-MM-DD` del **día de la clase** (`asistencia.fecha`), ambas incluidas; `hasta` no puede ser anterior a `desde` |
 | `pagina`, `por_pagina` | Como en estudiantes: `por_pagina` de 1 a 100, por defecto 20 |
 
@@ -678,17 +698,43 @@ Pantalla P2 y diagrama de actividades AD-04. Todo el módulo exige `requiereSesi
       "clase": { "id": 1, "materia": "Ingeniería de Software", "dia_semana": 1, "hora_inicio": "07:00" },
       "grupo": { "id": 1, "nombre": "D01" },
       "dispositivo": { "id": 1, "nombre_ubicacion": "Módulo X, aula 101" }
+    },
+    {
+      "id": null, "fecha": "2026-11-09", "hora": null, "estado": "Pendiente",
+      "estudiante": { "id": 2, "matricula": "220000002", "nombre": "Bruno", "apellidos": "Martínez Cruz", "activo": true },
+      "clase": { "id": 1, "materia": "Ingeniería de Software", "dia_semana": 1, "hora_inicio": "07:00" },
+      "grupo": { "id": 1, "nombre": "D01" },
+      "dispositivo": null
     }
   ],
-  "pagina": 1, "por_pagina": 20, "total": 1, "total_paginas": 1
+  "pagina": 1, "por_pagina": 20, "total": 2, "total_paginas": 1
 }
 ```
 
-- **Orden:** de lo más reciente a lo más antiguo, por fecha y luego por hora.
+- **Faltas y pendientes:** no tienen lectura, así que `id`, `hora` y `dispositivo` valen `null`.
+- **Orden:** de la sesión más reciente a la más antigua (fecha y hora de inicio de la clase). Dentro de una sesión, primero las lecturas, de la más reciente a la más antigua, y después quien no ha registrado, por apellidos.
+- **Filtros:** grupo, clase y fechas eligen las sesiones; estudiante, `q` y estado eligen filas dentro de ellas. Así, una falta siempre se calcula con la sesión completa.
+- **Los totales coinciden con P3:** la lista, las estadísticas y las dos exportaciones usan el mismo cálculo (`asistencias/registros.ts`).
 - **Sin UID**, ni siquiera enmascarado: las consultas no tocan `credencial_nfc` (RNF-06).
 - **Base de datos:** se apoya en los índices que ya existen, `asistencia (id_clase, fecha)` e `idx_clase_id_docente`.
 
 `GET /api/asistencias/filtros` responde `{ grupos: [{ id, nombre, ciclo_escolar }], clases: [{ id, materia, dia_semana, hora_inicio, tolerancia_min, grupo }] }`, solo con lo que el docente imparte.
+
+### Faltas y pendientes
+
+El sistema no guarda faltas: las calcula con la misma regla que las estadísticas (ver [Cómo se calculan las faltas](#cómo-se-calculan-las-faltas)). En cada sesión, cada estudiante esperado queda en uno de cuatro estados:
+
+| Estado | Cuándo |
+|---|---|
+| `Asistencia` o `Retardo` | Registró con su credencial |
+| `Pendiente` | No ha registrado y **la ventana de registro de la clase sigue abierta**: todavía puede llegar |
+| `Falta` | No registró y la ventana ya cerró |
+
+- **Cierre de la ventana:** `hora_inicio + max(MINUTOS_MAX_REGISTRO, tolerancia_min)`, la misma regla con la que el endpoint de lecturas acepta una lectura. Ese último minuto todavía cuenta como pendiente: los segundos de una lectura se truncan, así que 08:00:59 es el minuto 08:00.
+- **Ejemplo:** una clase del lunes a las 08:00, con 10 minutos de tolerancia y `MINUTOS_MAX_REGISTRO` = 60. Si alguien registra a las 07:55, desde ese momento sus compañeros aparecen como `Pendiente`; a las 09:01 pasan a `Falta`.
+- **Una clase que cruza la medianoche** (por ejemplo, a las 23:30) sigue pendiente hasta que su ventana cierra al día siguiente.
+- **Hora y zona:** se usa la hora del servidor de la API, convertida a `ZONA_HORARIA_ESCUELA`; nunca la zona del servidor ni el reloj de PostgreSQL.
+- **El SSE no avisa de los pendientes ni de las faltas:** solo envía las lecturas nuevas. La web vuelve a pedir la lista cuando llega una lectura, porque una lectura puede convertir a un pendiente en asistencia o abrir una sesión nueva.
 
 ### Aviso en tiempo real (SSE)
 
@@ -770,24 +816,25 @@ La respuesta trae:
 |---|---|
 | `periodo` | `desde` y `hasta` efectivos |
 | `filtros` | Grupo y clase elegidos, con sus nombres |
-| `resumen` | `sesiones`, `esperados`, `asistencias`, `retardos`, `faltas` y `porcentaje_asistencia` |
+| `resumen` | `sesiones`, `esperados`, `asistencias`, `retardos`, `faltas`, `pendientes` y `porcentaje_asistencia` |
 | `por_semana` | Lo mismo por semana ISO (`semana` = el lunes), para la gráfica de P3 |
 | `por_clase` | Lo mismo por clase |
-| `estudiantes_con_mas_faltas` | Solo quienes tienen al menos una falta. Se ordenan por faltas, luego por retardos y luego por apellidos. Sin UID. |
+| `estudiantes_con_mas_faltas` | Solo quienes tienen al menos una falta (un pendiente no cuenta). Se ordenan por faltas, luego por retardos y luego por apellidos. Traen también sus `pendientes`. Sin UID. |
 
-`porcentaje_asistencia` = `(asistencias + retardos) / esperados × 100`, con un decimal. Vale `null` si no hubo esperados.
+- `esperados` = `asistencias + retardos + faltas`. Un **pendiente** todavía no es ni falta ni asistencia: no cuenta en los esperados ni en el porcentaje, y se informa aparte en `pendientes`.
+- `porcentaje_asistencia` = `(asistencias + retardos) / esperados × 100`, con un decimal. Vale `null` si no hubo esperados.
 
-Todo sale de **una sola consulta SQL** (`estadisticas.service.ts`), que también usa la exportación.
+Todo sale de **una sola consulta SQL** (`estadisticas.service.ts`), que también usa la exportación. Los registros de esa consulta son los mismos de la lista de P2 (`asistencias/registros.ts`), así que los totales coinciden.
 
 ### Cómo se calculan las faltas
 
 El sistema no guarda las faltas: solo guarda asistencias y retardos. Las faltas se calculan así:
 
-1. **Sesión:** un par (clase, fecha) del periodo, hasta hoy, en el que **al menos una credencial registró asistencia**, y cuya fecha coincide con el `dia_semana` de la clase.
+1. **Sesión:** un par (clase, fecha) del periodo, hasta hoy, en el que **al menos una credencial registró asistencia**. Ya no se exige que la fecha coincida con el `dia_semana` actual de la clase: si alguien registró, hubo clase, aunque después se haya cambiado el día de la clase.
 2. **Esperados en una sesión:**
    - Los estudiantes inscritos en el grupo de la clase según `inscripcion_grupo`, **sin contar el día del alta ni el de la baja o cambio de grupo** (`desde < fecha < hasta`). Por ejemplo, quien se da de alta a las 10:00 no pudo llegar a la clase de las 7:00.
    - Además, siempre cuenta quien sí registró ese día, aunque esté fuera de esas fechas. Una asistencia real nunca se pierde.
-3. **Falta:** un esperado sin registro en esa sesión.
+3. **Falta:** un esperado sin registro en esa sesión, **cuando la ventana de registro de la clase ya cerró**. Mientras siga abierta, es un **pendiente**, que no cuenta como falta (ver [Faltas y pendientes](#faltas-y-pendientes)).
 
 **Por qué «hubo clase si alguien registró».** Comparamos tres opciones:
 
@@ -805,8 +852,8 @@ En una escuela, una falta falsa le hace más daño a un estudiante que una falta
 
 | Ruta | Parámetros | Contenido |
 |---|---|---|
-| `GET /api/asistencias/exportar` | `formato` + los mismos filtros de `GET /api/asistencias` | Encabezado (docente, filtros, fecha de generación), una fila por asistencia y los totales: registros, asistencias y retardos |
-| `GET /api/estadisticas/exportar` | `formato` + los mismos parámetros de `GET /api/estadisticas` | Encabezado, resumen, por clase, por semana y estudiantes con más faltas. En XLSX, cada tabla va en su propia hoja: «Resumen», «Por semana» y «Más faltas». |
+| `GET /api/asistencias/exportar` | `formato` + los mismos filtros de `GET /api/asistencias`, incluida `q` | Encabezado (docente, filtros, búsqueda, fecha de generación), una fila por registro (faltas y pendientes con hora y lector «—») y los totales: registros, asistencias, retardos, faltas y pendientes |
+| `GET /api/estadisticas/exportar` | `formato` + los mismos parámetros de `GET /api/estadisticas` | Encabezado, resumen, por clase, por semana y estudiantes con más faltas, con la columna «Pendientes». En XLSX, cada tabla va en su propia hoja: «Resumen», «Por semana» y «Más faltas». |
 
 - **Mismos totales que la pantalla, por construcción:** la exportación llama a las mismas funciones que los endpoints JSON (`listarAsistencias` y `calcularEstadisticas`). Las pruebas leen los archivos y comparan sus totales con los del endpoint.
 - **Sin UID** (RNF-06): esas funciones no leen `credencial_nfc`.
@@ -1055,7 +1102,7 @@ Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta e
 
 - **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
 - **Recuperación de contraseña:** no existe. El boceto de P1 tiene «¿Olvidaste tu contraseña?», y la web solo pide contactar al administrador. Hacerla de verdad necesita envío de correos y un token de un solo uso; mientras tanto, un administrador tendría que cambiar la contraseña directamente en la base.
-- **Aviso de privacidad:** la página `/aviso-de-privacidad` es un borrador. El texto definitivo (LFPDPPP) lo debe redactar y aprobar el equipo.
+- **Aviso de privacidad:** la página `/aviso-de-privacidad` es un borrador marcado como tal. El texto definitivo (LFPDPPP) lo redacta el equipo.
 - **Web:** faltan las entregas 2 a 5 (ver [Página web](#página-web)).
 - El firmware del ESP32 lo programa el equipo en `firmware/`.
 - **Estadísticas, siguientes pasos:**

@@ -91,7 +91,7 @@ El equipo entregó un documento con el modelo 4+1 que es la referencia del dise�
 - **PostgreSQL 18 local.** `psql` entra como `postgres` sin pedir contraseña (por `pgpass.conf` o por confianza local). El `.env` usa `PGUSER=postgres` con `PGPASSWORD` vacío.
 - **La carpeta de usuario de Windows es un repositorio de Git**, probablemente creado por accidente. Trabaja siempre dentro de la carpeta del proyecto, que tiene su propio `.git`. Nunca hagas commits en el repositorio de la carpeta de usuario.
 - **`curl` en Windows rompe los acentos** si el JSON va en la línea de comandos: «Núñez» llega como «N�ez». Para probar a mano con acentos, manda el cuerpo desde un archivo UTF-8 (`curl --data-binary @cuerpo.json`) o usa `Invoke-RestMethod`. No es un problema de la API.
-- **`main` está protegida** con un ruleset: exige el check «Tipos, compilación y pruebas» y bloquea los *force push*. No exige aprobaciones, porque Valeria trabaja sola en el repositorio y GitHub no deja aprobar los propios PR.
+- **`main` está protegida** con un ruleset: exige los checks «Tipos, compilación y pruebas» y «Web: tipos, compilación y pruebas» y bloquea los *force push*. No exige aprobaciones, porque Valeria trabaja sola en el repositorio y GitHub no deja aprobar los propios PR.
 - **Ya usaste Auto-fix** en algunos PR para atender fallas del CI y comentarios. CodeRabbit deja un comentario automático diciendo que no revisa el repositorio por tener pocas estrellas; ignóralo salvo que Valeria pida la revisión.
 
 ---
@@ -151,9 +151,9 @@ src/middleware/                 requiereSesion, requiereRol, requiereDispositivo
                                 limiteIntentos, limiteDispositivo, manejoErrores
 src/modules/<módulo>/           <módulo>.routes / .controller / .service / .schemas
   auth, lecturas (+ tiempo.ts), estudiantes, grupos, bitacora, dispositivos,
-  asistencias (+ tiempoReal.ts, SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
-src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion
-tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid
+  asistencias (+ registros.ts: faltas y pendientes; tiempoReal.ts: SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
+src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion, busqueda
+tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 web/                            página web: Vite, React, TypeScript y React Router, con su propio package.json
   vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
@@ -212,7 +212,7 @@ Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma, y se monta 
 | `PUT /api/estudiantes/:id/credencial` | Administrador | Reemplazar la credencial (la anterior queda inactiva en el historial) |
 | `POST /api/estudiantes/:id/baja` | Administrador | Baja lógica (AD-07) |
 | `GET /api/grupos` | Administrador | Grupos para el formulario de alta |
-| `GET /api/asistencias` | Docente | Lista paginada de **sus** clases, con filtros |
+| `GET /api/asistencias` | Docente | Lista paginada de **sus** clases: asistencias, retardos, faltas y pendientes. Filtros, incluida la búsqueda `q` por nombre o matrícula |
 | `GET /api/asistencias/filtros` | Docente | Sus grupos y clases, para los selectores |
 | `GET /api/asistencias/eventos` | Docente | SSE: asistencias nuevas de sus clases, con `Last-Event-ID`, latido y `sesion_terminada` |
 | `GET /api/asistencias/exportar?formato=pdf\|xlsx` | Docente | La lista de P2 en un archivo |
@@ -237,7 +237,7 @@ Las listas devuelven `pagina`, `por_pagina`, `total` y `total_paginas`.
 - **Duplicados:** `INSERT … ON CONFLICT DO NOTHING` y luego se lee el registro existente. Una lectura repetida responde `duplicado: true` con el mismo estado.
 - **Formato del UID:** uno solo, el canónico de `docs/contrato-dispositivo.md`: hexadecimal en mayúsculas, sin separadores, bytes en el orden de la anticolisión, de 4, 7 o 10 bytes (8, 14 o 20 caracteres; `PATRON_UID` en `src/utils/uid.ts`). La API normaliza mayúsculas, espacios y dos puntos, y rechaza con `400` cualquier otra longitud. El servidor no sabe ni debe saber qué modelo de lector hay.
 - **Lecturas sin conexión:** llegan con `leido_en` y se aceptan desde 24 horas atrás hasta 2 minutos en el futuro.
-- **Faltas:** no se guardan, se calculan. Una sesión es un par (clase, fecha) en el que **alguien registró asistencia** («hubo clase si alguien registró»). Los esperados salen de `inscripcion_grupo`, sin contar el día del alta ni el de la baja. Así nunca se inventan faltas.
+- **Faltas y pendientes:** no se guardan, se calculan en `src/modules/asistencias/registros.ts`, **el único lugar** que define los estados; lo usan P2, P3 y las dos exportaciones, así que sus totales coinciden. Una sesión es un par (clase, fecha) en el que **alguien registró asistencia** («hubo clase si alguien registró»). Los esperados salen de `inscripcion_grupo`, sin contar el día del alta ni el de la baja. Quien no registró es **`Pendiente`** mientras la ventana de la clase siga abierta (hasta `hora_inicio + max(MINUTOS_MAX_REGISTRO, tolerancia_min)`, ese minuto incluido) y **`Falta`** después. En P3, un pendiente no cuenta en los esperados, las faltas ni el porcentaje; va aparte en `pendientes`. La hora actual llega como parámetro (`ahora`) desde la API, nunca del reloj de PostgreSQL, para que las pruebas la fijen.
 - **Aislamiento entre docentes:** un docente filtra por un estudiante si este pertenece hoy a uno de sus grupos **o** tiene asistencias en alguna de sus clases.
 
 ### 3.6 Variables de entorno
@@ -257,7 +257,7 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **176 pruebas** en 8 archivos:
+Según el README, hay **191 pruebas** en 9 archivos:
 
 | Archivo | Pruebas |
 |---|---|
@@ -269,6 +269,7 @@ Según el README, hay **176 pruebas** en 8 archivos:
 | `estadisticas.test.ts` | 19 |
 | `orden.test.ts` | 10 |
 | `uid.test.ts` | 24 |
+| `faltas.test.ts` | 15 |
 
 Cómo están hechas:
 
@@ -298,7 +299,8 @@ Cómo están hechas:
 | #6 | `docs/claude-md` | Este archivo | Fusionado el 15 de noviembre (`f79a04a`) |
 | #7 | `fix/orden-alfabetico` | Orden alfabético en español en todas las listas y base de pruebas en configuración «C» | Fusionado el 15 de noviembre (`4cd8367`) |
 | #8 | `docs/lector-nfc` | Formato canónico del UID, guía del firmware, `uid:revisar` y longitud exacta del UID en la API | Fusionado el 15 de noviembre (`9c4b386`) |
-| #9 | `feat/web-base-login` | Web, entrega 1: proyecto en `web/`, trabajo de CI, login (P1), encabezado y rutas por rol | Abierto |
+| #9 | `feat/web-base-login` | Web, entrega 1: proyecto en `web/`, trabajo de CI, login (P1), encabezado y rutas por rol | Fusionado (`920daed`) |
+| #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Abierto |
 
 ### Avance aproximado
 
@@ -332,12 +334,12 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 
 - **Referencia visual:** los bocetos de la Actividad 11 (P1 a P5), que Valeria compartió en PDF. La web debe ser lo más fiel posible a ellos; los colores y las medidas ya están como variables en `web/src/estilos.css`. El PDF no está en el repositorio: si no lo tienes en la sesión, pídeselo.
 - **Diferencias entre los bocetos y la API.** En el plan de la entrega que toque cada una, **propón si conviene agregarla a la API o ajustar la pantalla, con ventajas y desventajas**, y espera la decisión:
-  - Entrega 2 (P2): la tabla muestra filas con estado «Falta», pero `GET /api/asistencias` solo devuelve asistencias y retardos; y el filtro «Estudiante» busca por nombre, mientras que la API filtra por `id_estudiante`.
+  - Entrega 2 (P2): **decidido (opción A en las dos):** la API agrega las filas de «Falta» y «Pendiente» y la búsqueda `q` por nombre o matrícula (PR #10). La web de P2 va en un PR aparte, después de fusionar el #10, y su plan corto se presenta antes.
   - Entrega 3 (P3): la tarjeta «Estudiantes en el grupo», que `GET /api/estadisticas` no devuelve.
   - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
   - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
-- **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas». Valeria debe agregarlo al ruleset de `main`; si todavía no lo hizo, recuérdaselo.
-- **Estado de las entregas:** 1 (base, CI y P1), en el PR #9. Las pantallas P2 a P5 existen como rutas con la página `EnConstruccion`.
+- **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas», y ya está en el ruleset de `main` junto con el de la API.
+- **Estado de las entregas:** 1 (base, CI y P1) fusionada. 2 (P2): primero la API, en el PR #10. Las pantallas P2 a P5 existen como rutas con la página `EnConstruccion`.
 
 - **Ubicación:**
   - Recomendado: una carpeta `web/` en este mismo repositorio, con su propio `package.json`.
@@ -396,7 +398,7 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 - El «modo registro» del ESP32, para vincular credenciales sin escribir el UID. La función `insertarCredencial` ya está lista para reutilizarse.
 - La revocación individual de los JWT.
 - La recuperación de contraseña (el boceto de P1 la muestra; la web solo pide contactar al administrador).
-- El texto definitivo del aviso de privacidad: `web/src/paginas/AvisoPrivacidad.tsx` es un borrador que el equipo debe redactar y aprobar.
+- El texto definitivo del aviso de privacidad: **lo redacta el equipo** (decidido el 18 de noviembre). `web/src/paginas/AvisoPrivacidad.tsx` es un borrador marcado como tal; no lo reescribas como si fuera el definitivo.
 
 ---
 
