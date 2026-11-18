@@ -21,7 +21,7 @@ Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto,
 
 1. **Lector NFC (ESP32 con lector NFC, LED RGB y buzzer).** Lee el UID de la credencial, lo envía a la API y muestra el resultado con colores y sonidos. **No decide nada.**
 2. **API (este repositorio).** Toda la lógica: credenciales, horarios, retardos, duplicados, roles, estadísticas y reportes.
-3. **Página web (pendiente).** Dos roles:
+3. **Página web (carpeta `web/`, en construcción).** Dos roles:
    - **Docente:** consulta las asistencias de sus grupos en tiempo real, ve estadísticas y exporta reportes.
    - **Administrador:** gestiona estudiantes y credenciales.
 
@@ -124,12 +124,16 @@ npm run db:setup -- --reset          # borra "taplist" y la recrea
 npm run dispositivo:clave -- <id>    # genera o rota la clave de un lector y la muestra una sola vez
 npm run simular:lectura -- <uid> [--leido-en <ISO>]   # simula el ESP32
 npm run uid:revisar -- <valor> [--comparar <otro>]    # revisa el formato de un UID y lo compara con otro
+
+# La web, dentro de web/ (con la API corriendo en otra terminal):
+npm run dev                          # web en http://localhost:5173, con /api reenviado a la API
+npm run typecheck && npm run build && npm test
 ```
 
 ### 3.3 Estructura
 
 ```
-.github/workflows/pruebas.yml   CI: PostgreSQL 18 + Node de .nvmrc → npm ci, typecheck, build, test
+.github/workflows/pruebas.yml   CI con dos trabajos: la API (PostgreSQL 18) y la web; cada uno hace npm ci, typecheck, build y test
 db/migrations/001..004          esquema (orden alfabético)
 db/seeds/001_datos_prueba.sql   datos ficticios solo para desarrollo
 db/preparar-base.ts             crea la base, migra y carga la semilla
@@ -151,6 +155,13 @@ src/modules/<módulo>/           <módulo>.routes / .controller / .service / .sc
 src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion
 tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
+web/                            página web: Vite, React, TypeScript y React Router, con su propio package.json
+  vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
+  src/api/cliente.ts            pedir(): única puerta hacia la API, con el manejo común de errores (ErrorApi)
+  src/sesion/                   ContextoSesion (usuario, iniciarSesion, cerrarSesion) y rutas de inicio por rol
+  src/componentes/              Marco (encabezado y menú por rol) y RutaProtegida
+  src/paginas/                  Login (P1), AvisoPrivacidad, SinPermiso, NoEncontrada, EnConstruccion
+  src/pruebas/                  login, sesion y cliente + ayudas.tsx (simularApi, montar)
 ```
 
 Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma, y se monta en `src/app.ts`.
@@ -269,6 +280,8 @@ Cómo están hechas:
 
 **Confirma el conteo con `npm test` al empezar.** Si no coincide, actualiza la tabla del README.
 
+**Pruebas de la web:** aparte, en `web/src/pruebas/`, hay **33 pruebas** en 3 archivos (`login` 14, `sesion` 11, `cliente` 8). Se corren con `npm test` dentro de `web/`, no necesitan la API ni la base (sustituyen `fetch` con `simularApi`) y montan la aplicación completa con `montar(ruta)`.
+
 ---
 
 ## 4. Estado del proyecto (al 15 de noviembre de 2026)
@@ -283,8 +296,9 @@ Cómo están hechas:
 | #4 | `feat/consulta-asistencias` | Consulta de asistencias y SSE | Fusionado (`284efb3`) |
 | #5 | `feat/estadisticas-exportacion` | Migración 004, estadísticas, exportación PDF y XLSX | Fusionado el 15 de noviembre (`47ad82f`) |
 | #6 | `docs/claude-md` | Este archivo | Fusionado el 15 de noviembre (`f79a04a`) |
-| #7 | `fix/orden-alfabetico` | Orden alfabético en español en todas las listas y base de pruebas en configuración «C» | Abierto |
-| #8 | `docs/lector-nfc` | Formato canónico del UID, guía del firmware, `uid:revisar` y longitud exacta del UID en la API | Abierto; va encima del #7 |
+| #7 | `fix/orden-alfabetico` | Orden alfabético en español en todas las listas y base de pruebas en configuración «C» | Fusionado el 15 de noviembre (`4cd8367`) |
+| #8 | `docs/lector-nfc` | Formato canónico del UID, guía del firmware, `uid:revisar` y longitud exacta del UID en la API | Fusionado el 15 de noviembre (`9c4b386`) |
+| #9 | `feat/web-base-login` | Web, entrega 1: proyecto en `web/`, trabajo de CI, login (P1), encabezado y rutas por rol | Abierto |
 
 ### Avance aproximado
 
@@ -292,10 +306,10 @@ Cómo están hechas:
 |---|---|---|
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
-| Web | 25 % | 0 %. Plan aprobado: 5 entregas, un PR por entrega. |
-| Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Está el contrato, sin código. El circuito está en prototipo. |
+| Web | 25 % | ≈ 20 %. Entrega 1 de 5 en revisión (PR #9). |
+| Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Están el contrato y la guía, sin código. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
-| **Total** | | **≈ 56 %** |
+| **Total** | | **≈ 61 %** |
 
 ---
 
@@ -314,7 +328,16 @@ Si el PR de `feat/estadisticas-exportacion` no existe, ábrelo. Si existe, revis
 
 ### Paso 2. Página web (la parte más grande que falta)
 
-La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/` con Vite, React y TypeScript, y Express sirve la web en producción. Son **5 entregas, una rama y un PR por entrega:** (1) base, CI y P1; (2) P2 con SSE y exportación; (3) P3; (4) P4 y P5; (5) producción. **Antes de cada entrega, presenta un plan corto y espera aprobación.** Al abrir el PR de la entrega 1, recuérdale a Valeria agregar el check nuevo de la web al ruleset de `main`. Lo que cada plan debe respetar:
+La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/` con Vite, React y TypeScript, y Express sirve la web en producción. Son **5 entregas, una rama y un PR por entrega:** (1) base, CI y P1; (2) P2 con SSE y exportación; (3) P3; (4) P4 y P5; (5) producción. **Antes de cada entrega, presenta un plan corto y espera aprobación.** Lo que cada plan debe respetar:
+
+- **Referencia visual:** los bocetos de la Actividad 11 (P1 a P5), que Valeria compartió en PDF. La web debe ser lo más fiel posible a ellos; los colores y las medidas ya están como variables en `web/src/estilos.css`. El PDF no está en el repositorio: si no lo tienes en la sesión, pídeselo.
+- **Diferencias entre los bocetos y la API.** En el plan de la entrega que toque cada una, **propón si conviene agregarla a la API o ajustar la pantalla, con ventajas y desventajas**, y espera la decisión:
+  - Entrega 2 (P2): la tabla muestra filas con estado «Falta», pero `GET /api/asistencias` solo devuelve asistencias y retardos; y el filtro «Estudiante» busca por nombre, mientras que la API filtra por `id_estudiante`.
+  - Entrega 3 (P3): la tarjeta «Estudiantes en el grupo», que `GET /api/estadisticas` no devuelve.
+  - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
+  - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
+- **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas». Valeria debe agregarlo al ruleset de `main`; si todavía no lo hizo, recuérdaselo.
+- **Estado de las entregas:** 1 (base, CI y P1), en el PR #9. Las pantallas P2 a P5 existen como rutas con la página `EnConstruccion`.
 
 - **Ubicación:**
   - Recomendado: una carpeta `web/` en este mismo repositorio, con su propio `package.json`.
@@ -372,6 +395,8 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 - La tabla opcional `dia_inhabil`.
 - El «modo registro» del ESP32, para vincular credenciales sin escribir el UID. La función `insertarCredencial` ya está lista para reutilizarse.
 - La revocación individual de los JWT.
+- La recuperación de contraseña (el boceto de P1 la muestra; la web solo pide contactar al administrador).
+- El texto definitivo del aviso de privacidad: `web/src/paginas/AvisoPrivacidad.tsx` es un borrador que el equipo debe redactar y aprobar.
 
 ---
 
@@ -400,7 +425,7 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 1. **Plan antes de código.** Revisa el repositorio y presenta un plan con endpoints, validaciones, decisiones con ventajas y desventajas, cambios al modelo, pruebas y la lista de archivos. **Espera la aprobación.** Si algo es ambiguo o contradice el diseño entregado, pregunta.
 2. **Una rama por módulo**, creada desde el `main` actualizado (`git checkout main && git pull`), con nombres como `feat/…`, `fix/…`, `ci/…` o `docs/…`.
 3. **Un commit en español por paso**, en modo imperativo descriptivo, como los existentes: «Agrega la baja lógica de estudiantes (AD-07)».
-4. **Antes de abrir el PR:** `npm run typecheck`, `npm run build` y `npm test` en verde, con Node 24.
+4. **Antes de abrir el PR:** `npm run typecheck`, `npm run build` y `npm test` en verde, con Node 24. Si el cambio toca `web/`, también esos tres comandos dentro de `web/`, y una prueba a mano en el navegador contra la API con la semilla.
 5. **Un PR hacia `main`** con un resumen, la lista de commits, cómo se verificó y una sección **«Para revisar»** con los puntos delicados y las limitaciones conocidas. Después revisa el CI con `gh`.
 6. **No fusiones, no hagas *force push* a `main` y no cambies el ruleset** sin que Valeria lo pida.
 

@@ -1,4 +1,4 @@
-# TapList · API
+# TapList · API y web
 
 [![Pruebas](https://github.com/val-velvaz/TapList/actions/workflows/pruebas.yml/badge.svg)](https://github.com/val-velvaz/TapList/actions/workflows/pruebas.yml)
 
@@ -13,7 +13,9 @@ Hasta ahora incluye:
 - La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada con filtros, solo de sus clases, y aviso en tiempo real con SSE.
 - Las **estadísticas y la exportación** para el Docente (P3, AD-05, RF-16 y RF-06): porcentaje de asistencia, retardos y faltas por grupo, clase y periodo, asistencia por semana, estudiantes con más faltas, y exportación a PDF y XLSX.
 
-Falta el frontend, que se construirá sobre esta API.
+- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado y las rutas por rol. Ver [Página web](#página-web).
+
+Faltan las pantallas P2 a P5 de la web y el firmware del lector, que programa el equipo.
 
 ## Contenido
 
@@ -28,10 +30,11 @@ Falta el frontend, que se construirá sobre esta API.
 9. [Gestión de estudiantes](#gestión-de-estudiantes)
 10. [Consulta de asistencias (Docente)](#consulta-de-asistencias-docente)
 11. [Estadísticas y exportación (Docente)](#estadísticas-y-exportación-docente)
-12. [Decisiones técnicas](#decisiones-técnicas)
-13. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
-14. [Estructura del proyecto](#estructura-del-proyecto)
-15. [Pendientes](#pendientes)
+12. [Página web](#página-web)
+13. [Decisiones técnicas](#decisiones-técnicas)
+14. [Cambios al modelo de datos](#cambios-al-modelo-de-datos)
+15. [Estructura del proyecto](#estructura-del-proyecto)
+16. [Pendientes](#pendientes)
 
 ## Requisitos previos
 
@@ -168,17 +171,21 @@ npm test
 
 ### Integración continua (GitHub Actions)
 
-El workflow `.github/workflows/pruebas.yml` corre en **cada PR** y en **cada push a `main`**:
+El workflow `.github/workflows/pruebas.yml` corre en **cada PR** y en **cada push a `main`**, con dos trabajos independientes:
+
+**«Tipos, compilación y pruebas»** (la API):
 
 1. Levanta un PostgreSQL 18 de servicio.
 2. Instala Node con la versión de `.nvmrc` (24 LTS).
 3. Corre `npm ci`, `npm run typecheck`, `npm run build` y `npm test`.
 
+**«Web: tipos, compilación y pruebas»** (la carpeta `web/`): instala Node igual y corre los mismos cuatro pasos dentro de `web/`. No necesita la base de datos.
+
 No usa `.env` ni secretos del repositorio:
 - La contraseña de PostgreSQL solo existe dentro del contenedor efímero de CI.
 - `vitest.config.ts` genera un `JWT_SECRET` aleatorio en cada corrida.
 
-El resultado aparece como un check en cada PR y en la insignia de arriba. Conviene proteger la rama `main` en GitHub para exigir que el check **Tipos, compilación y pruebas** pase antes de fusionar. Se configura en *Settings → Branches → Add branch ruleset → Require status checks to pass*.
+El resultado aparece como un check en cada PR y en la insignia de arriba. Conviene proteger la rama `main` en GitHub para exigir que los checks **Tipos, compilación y pruebas** y **Web: tipos, compilación y pruebas** pasen antes de fusionar. Se configura en *Settings → Branches → Add branch ruleset → Require status checks to pass*.
 
 Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `tests/globalSetup.ts`:
 
@@ -188,7 +195,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-Hay 176 pruebas en ocho archivos:
+La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 176 pruebas en ocho archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -811,6 +818,103 @@ En una escuela, una falta falsa le hace más daño a un estudiante que una falta
 - **PDF:** `pdfkit`, tamaño carta horizontal, con Helvetica (incluye acentos y eñes). Las tablas se reparten en varias páginas con la cabecera repetida, y cada hoja lleva su número de página.
 - **Dependencias:** `exceljs@4` depende de `uuid@8`, que tiene una alerta moderada (GHSA-w5hq-g745-h8pq). La alerta es por las funciones v3, v5 y v6 con un buffer, que `exceljs` no usa. Aun así, `package.json` fuerza `uuid@11` con `overrides`. `npm audit` reporta 0 vulnerabilidades.
 
+## Página web
+
+La web vive en la carpeta `web/`, con su propio `package.json`: **Vite, React, TypeScript y React Router**. Sigue los bocetos de la Actividad 11 (pantallas P1 a P5) y se construye en cinco entregas:
+
+| Entrega | Contenido | Estado |
+|---|---|---|
+| 1 | Proyecto, CI, inicio de sesión (P1), encabezado y rutas por rol | Lista |
+| 2 | Consulta de asistencias (P2) con aviso en vivo y exportación | Pendiente |
+| 3 | Estadísticas (P3) | Pendiente |
+| 4 | Gestión de estudiantes (P4 y P5) | Pendiente |
+| 5 | Express sirve la web en producción | Pendiente |
+
+### Levantar la web en desarrollo
+
+Hacen falta dos terminales: una para la API y otra para la web.
+
+```bash
+# Terminal 1, en la raíz del repositorio: la API en http://localhost:3000
+npm run dev
+
+# Terminal 2: la web en http://localhost:5173
+cd web
+npm install
+npm run dev
+```
+
+Abre `http://localhost:5173` y entra con una de las [credenciales de prueba](#credenciales-de-prueba).
+
+| Comando (dentro de `web/`) | Qué hace |
+|---|---|
+| `npm run dev` | Servidor de desarrollo con recarga automática |
+| `npm run typecheck` | Verifica los tipos |
+| `npm run build` | Compila a `web/dist/` |
+| `npm test` | Corre las pruebas (no necesitan la API ni la base) |
+
+Si la API corre en otra dirección, indícala al arrancar la web con la variable `TAPLIST_API_URL` (por defecto, `http://localhost:3000`).
+
+### Mismo origen y sesión
+
+- **La web y la API deben estar en el mismo origen.** La cookie de sesión es `httpOnly` y `SameSite=Strict`: JavaScript no puede leerla y el navegador no la envía a otro sitio.
+  - En desarrollo, Vite reenvía todo lo que empieza con `/api` a la API (`web/vite.config.ts`).
+  - En producción, Express servirá la web compilada junto con la API (entrega 5).
+- **La web no guarda ningún token:** ni en `localStorage`, ni en `sessionStorage`, ni en memoria. Para saber si hay sesión, al abrir la página consulta `GET /api/auth/me`.
+- **Las rutas por rol son una comodidad, no la seguridad.** `RutaProtegida` evita mostrar una pantalla que no corresponde, pero quien decide es la API, que valida el rol en cada solicitud (RF-09).
+
+### Rutas
+
+| Ruta | Pantalla | Quién |
+|---|---|---|
+| `/login` | P1 · Inicio de sesión | Todos |
+| `/aviso-de-privacidad` | Aviso de privacidad (borrador) | Todos |
+| `/asistencias` | P2 · Consulta de asistencias (en construcción) | Docente |
+| `/estadisticas` | P3 · Estadísticas (en construcción) | Docente |
+| `/estudiantes` | P4 · Gestión de estudiantes (en construcción) | Administrador |
+| `/estudiantes/nuevo` | P5 · Agregar estudiante (en construcción) | Administrador |
+
+- Después de entrar, la web va a la ruta que indica la API en `redirigirA`. Solo acepta rutas internas; cualquier otra cosa se cambia por el inicio del rol.
+- Sin sesión, una ruta protegida lleva al login. Con sesión y otro rol, muestra «Sin permiso».
+
+### Manejo de errores
+
+Todas las pantallas llaman a la API con una sola función, `pedir` (`web/src/api/cliente.ts`), que convierte cualquier fallo en un `ErrorApi` con el código, el mensaje y los detalles por campo:
+
+| Respuesta | Qué hace la web |
+|---|---|
+| `400` | Muestra el mensaje de cada campo junto al campo |
+| `401` | Cierra la sesión de la web y lleva al login con el aviso «Tu sesión terminó». En el login significa «credenciales incorrectas» y se muestra el mensaje genérico de la API |
+| `403` | «Sin permiso» |
+| `404` | «No encontrado» |
+| `409` y `429` | Muestra el mensaje de la API |
+| Sin red | «No se pudo conectar con el servidor» |
+
+### Diferencias con los bocetos de la Actividad 11
+
+| Boceto | En la web | Motivo |
+|---|---|---|
+| «¿Olvidaste tu contraseña?» (P1) | Muestra «Para restablecer tu contraseña, contacta al administrador del sistema» | La API no tiene recuperación de contraseña. Queda como pendiente |
+| Dirección `/admin/estudiantes` (P4 y P5) | `/estudiantes` y `/estudiantes/nuevo` | Son las rutas que devuelve la API en `redirigirA` |
+| Pestaña «Asistencias» del Administrador (P4) | No aparece todavía | La consulta de asistencias es solo para Docentes. Se decide en la entrega 4 |
+| «Prof. R. Navarro · Docente» | Nombre y apellidos completos, y el rol | La API no devuelve un nombre abreviado |
+
+Las diferencias de P2 y P3 (filas con «Falta», filtro de estudiante por nombre y tarjeta «Estudiantes en el grupo») se deciden en el plan de su entrega.
+
+### Pruebas de la web
+
+Hay 33 pruebas en tres archivos de `web/src/pruebas/`, con Vitest y Testing Library. Montan la aplicación completa y sustituyen `fetch` por una API simulada; una llamada que la prueba no espera la hace fallar.
+
+| Archivo | Pruebas | Qué cubre |
+|---|---|---|
+| `login.test.tsx` | 14 | Los elementos del boceto, la entrada de cada rol a su pantalla, `redirigirA` externo, `401`, `429`, `400` por campo, sin red, `500`, validación sin llamar a la API, Mostrar/Ocultar, «¿Olvidaste tu contraseña?», el aviso de privacidad y que no se guarda nada en el navegador |
+| `sesion.test.tsx` | 11 | Rutas protegidas sin sesión, sesión ya abierta, inicio por rol, «Sin permiso» en ambos sentidos, página no encontrada, estado de carga, cierre de sesión, y que un `401` posterior lleva al login mientras que un `403` o un `404` no |
+| `cliente.test.ts` | 8 | `pedir`: JSON, `204`, mensajes y detalles de la API, mensajes propios por código, sin red, petición cancelada y aviso de pérdida de sesión solo con `401`; y `rutaDeInicio` |
+
+Para confirmar que detectan errores reales, se rompió el código a propósito tres veces: sin revisar el rol en `RutaProtegida` fallaron 2 pruebas; sin avisar del `401`, 2; y aceptando cualquier `redirigirA`, 1.
+
+Además, la entrega 1 se probó a mano en un navegador contra la API real con la semilla: entrada de los dos roles, mensaje de credenciales incorrectas, recarga con la sesión abierta, «Sin permiso» y cierre de sesión. La cookie llegó como `httpOnly` y `SameSite=Strict`, y `document.cookie` quedó vacío.
+
 ## Decisiones técnicas
 
 - **Node 24 LTS, Express 5 y TypeScript.** Express 5 propaga solo los errores de los handlers `async`, así que no hacen falta envoltorios. Las capas están separadas en `routes`, `controller`, `service` y `schemas` por módulo.
@@ -821,6 +925,7 @@ En una escuela, una falta falsa le hace más daño a un estudiante que una falta
 - **Error genérico con tiempo similar.** Si el correo no existe, la contraseña se verifica contra un hash ficticio. De esta forma, «correo inexistente», «contraseña incorrecta» y «cuenta inactiva» cuestan lo mismo: una verificación argon2 completa. En una medición local, las medianas fueron de 47.5 ms y 44.9 ms.
 - **Validación con `zod`.** Repite en la API la validación de forma del frontend (paso 2 de AD-01). El correo se normaliza con `trim` y minúsculas, y la contraseña tiene un máximo de 256 caracteres para que no se pueda gastar CPU con hashes enormes. Las variables de entorno también se validan con `zod` al arrancar.
 - **Orden alfabético fijo en las consultas.** Ver [Orden alfabético en español](#orden-alfabético-en-español).
+- **Web con Vite, React y TypeScript en `web/`, en el mismo repositorio.** Un solo repositorio y un solo PR por cambio que toque la API y la web, con el mismo lenguaje y el mismo Vitest que el backend. Va en su propia carpeta, con su `package.json`, para no mezclar dependencias del navegador con las del servidor. Pocas librerías: React Router para las rutas y `fetch` para la API.
 - **`helmet`** agrega los encabezados de seguridad, y `express.json` acepta como máximo 10 KB.
 
 ### Orden alfabético en español
@@ -934,7 +1039,14 @@ src/
                              validacion (validar con zod y paginación compartida)
   app.ts                     arma la app de Express (la usan el servidor y las pruebas)
   server.ts                  punto de entrada
-tests/                       pruebas unitarias y de integración
+tests/                       pruebas unitarias y de integración de la API
+web/                         página web (Vite, React y TypeScript), con su propio package.json
+  vite.config.ts             proxy de /api en desarrollo y configuración de las pruebas
+  src/api/cliente.ts         pedir(): única puerta hacia la API, con el manejo común de errores
+  src/sesion/                ContextoSesion (usuario actual, entrar y salir) y rutas de inicio por rol
+  src/componentes/           Marco (encabezado y menú) y RutaProtegida
+  src/paginas/               Login (P1), AvisoPrivacidad, SinPermiso, NoEncontrada y EnConstruccion
+  src/pruebas/               pruebas de la web
 ```
 
 Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta en `src/app.ts`.
@@ -942,7 +1054,10 @@ Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta e
 ## Pendientes
 
 - **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
-- Fuera del alcance por ahora: el firmware del ESP32 y el frontend.
+- **Recuperación de contraseña:** no existe. El boceto de P1 tiene «¿Olvidaste tu contraseña?», y la web solo pide contactar al administrador. Hacerla de verdad necesita envío de correos y un token de un solo uso; mientras tanto, un administrador tendría que cambiar la contraseña directamente en la base.
+- **Aviso de privacidad:** la página `/aviso-de-privacidad` es un borrador. El texto definitivo (LFPDPPP) lo debe redactar y aprobar el equipo.
+- **Web:** faltan las entregas 2 a 5 (ver [Página web](#página-web)).
+- El firmware del ESP32 lo programa el equipo en `firmware/`.
 - **Estadísticas, siguientes pasos:**
   - Una tabla `dia_inhabil` opcional, si la escuela quiere contar como faltas los días en que todo el grupo faltó.
   - Exportar en segundo plano si alguna vez hace falta superar `EXPORTACION_MAX_FILAS`.
