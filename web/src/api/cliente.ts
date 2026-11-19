@@ -46,6 +46,11 @@ export function registrarPerdidaDeSesion(aviso: (() => void) | null): void {
   alPerderSesion = aviso;
 }
 
+/** Avisa a la sesión que ya no sirve (p. ej., el SSE recibió `sesion_terminada`). */
+export function avisarPerdidaDeSesion(): void {
+  alPerderSesion?.();
+}
+
 export interface OpcionesPeticion {
   metodo?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   /** Se envía como JSON. */
@@ -92,11 +97,48 @@ export async function pedir<T = unknown>(ruta: string, opciones: OpcionesPeticio
     throw new ErrorApi(0, mensajePorDefecto(0));
   }
 
-  const json = await leerJson(respuesta);
-  if (respuesta.ok) return json as T;
+  if (!respuesta.ok) throw await errorDeRespuesta(respuesta, sinAvisoDeSesion);
+  return (await leerJson(respuesta)) as T;
+}
 
-  const datos = (json ?? {}) as { error?: unknown; detalles?: unknown };
+/** Convierte una respuesta fallida en ErrorApi y avisa a la sesión si es un 401. */
+async function errorDeRespuesta(respuesta: Response, sinAvisoDeSesion: boolean): Promise<ErrorApi> {
+  const datos = ((await leerJson(respuesta)) ?? {}) as { error?: unknown; detalles?: unknown };
   const mensaje = typeof datos.error === 'string' && datos.error ? datos.error : mensajePorDefecto(respuesta.status);
   if (respuesta.status === 401 && !sinAvisoDeSesion) alPerderSesion?.();
-  throw new ErrorApi(respuesta.status, mensaje, soloTextos(datos.detalles));
+  return new ErrorApi(respuesta.status, mensaje, soloTextos(datos.detalles));
+}
+
+/** El nombre de archivo de `Content-Disposition: attachment; filename=...`. */
+export function nombreDeArchivo(disposicion: string | null, porDefecto: string): string {
+  const coincidencia = disposicion?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  return coincidencia?.[1] ? decodeURIComponent(coincidencia[1]) : porDefecto;
+}
+
+/**
+ * Descarga un archivo de la API (PDF o XLSX) y lo guarda en el equipo con el
+ * nombre que propone el servidor. Los errores se tratan igual que en `pedir`.
+ */
+export async function descargarArchivo(ruta: string, porDefecto = 'archivo'): Promise<string> {
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(ruta, { credentials: 'same-origin' });
+  } catch {
+    throw new ErrorApi(0, mensajePorDefecto(0));
+  }
+  if (!respuesta.ok) throw await errorDeRespuesta(respuesta, false);
+
+  const nombre = nombreDeArchivo(respuesta.headers.get('Content-Disposition'), porDefecto);
+  const url = URL.createObjectURL(await respuesta.blob());
+  try {
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = nombre;
+    document.body.append(enlace);
+    enlace.click();
+    enlace.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  return nombre;
 }

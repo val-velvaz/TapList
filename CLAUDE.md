@@ -157,11 +157,15 @@ tests/                          auth, tiempo, lecturas, estudiantes, asistencias
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 web/                            página web: Vite, React, TypeScript y React Router, con su propio package.json
   vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
-  src/api/cliente.ts            pedir(): única puerta hacia la API, con el manejo común de errores (ErrorApi)
+  src/api/cliente.ts            pedir() y descargarArchivo(): única puerta hacia la API, con el manejo común de errores (ErrorApi)
+  src/api/asistencias.ts        tipos y llamadas de P2
   src/sesion/                   ContextoSesion (usuario, iniciarSesion, cerrarSesion) y rutas de inicio por rol
-  src/componentes/              Marco (encabezado y menú por rol) y RutaProtegida
+  src/componentes/              Marco (encabezado y menú por rol), RutaProtegida y Paginacion
   src/paginas/                  Login (P1), AvisoPrivacidad, SinPermiso, NoEncontrada, EnConstruccion
-  src/pruebas/                  login, sesion y cliente + ayudas.tsx (simularApi, montar)
+  src/paginas/asistencias/      Asistencias (P2) y useEnVivo (SSE)
+  src/utilidades/fechas.ts      fechas y horas para mostrar y para los filtros
+  src/pruebas/                  login, sesion, cliente y asistencias + ayudas.tsx (simularApi, montar,
+                                API_P2_VACIA) y eventSourceFalso.ts
 ```
 
 Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma, y se monta en `src/app.ts`.
@@ -281,7 +285,7 @@ Cómo están hechas:
 
 **Confirma el conteo con `npm test` al empezar.** Si no coincide, actualiza la tabla del README.
 
-**Pruebas de la web:** aparte, en `web/src/pruebas/`, hay **33 pruebas** en 3 archivos (`login` 14, `sesion` 11, `cliente` 8). Se corren con `npm test` dentro de `web/`, no necesitan la API ni la base (sustituyen `fetch` con `simularApi`) y montan la aplicación completa con `montar(ruta)`.
+**Pruebas de la web:** aparte, en `web/src/pruebas/`, hay **56 pruebas** en 4 archivos (`login` 14, `sesion` 11, `cliente` 8, `asistencias` 23). Toda pantalla que entre a `/asistencias` necesita las respuestas de P2 (usa `API_P2_VACIA`); el SSE se simula con `EventSourceFalso`, que `preparar.ts` instala antes de cada prueba. Se corren con `npm test` dentro de `web/`, no necesitan la API ni la base (sustituyen `fetch` con `simularApi`) y montan la aplicación completa con `montar(ruta)`.
 
 ---
 
@@ -300,7 +304,8 @@ Cómo están hechas:
 | #7 | `fix/orden-alfabetico` | Orden alfabético en español en todas las listas y base de pruebas en configuración «C» | Fusionado el 15 de noviembre (`4cd8367`) |
 | #8 | `docs/lector-nfc` | Formato canónico del UID, guía del firmware, `uid:revisar` y longitud exacta del UID en la API | Fusionado el 15 de noviembre (`9c4b386`) |
 | #9 | `feat/web-base-login` | Web, entrega 1: proyecto en `web/`, trabajo de CI, login (P1), encabezado y rutas por rol | Fusionado (`920daed`) |
-| #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Abierto |
+| #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Fusionado (`1076ce0`) |
+| #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Abierto |
 
 ### Avance aproximado
 
@@ -308,10 +313,10 @@ Cómo están hechas:
 |---|---|---|
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
-| Web | 25 % | ≈ 20 %. Entrega 1 de 5 en revisión (PR #9). |
+| Web | 25 % | ≈ 40 %. Entregas 1 y 2 de 5 (la 2, en el PR #11). |
 | Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Están el contrato y la guía, sin código. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
-| **Total** | | **≈ 61 %** |
+| **Total** | | **≈ 66 %** |
 
 ---
 
@@ -339,7 +344,8 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
   - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
   - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
 - **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas», y ya está en el ruleset de `main` junto con el de la API.
-- **Estado de las entregas:** 1 (base, CI y P1) fusionada. 2 (P2): primero la API, en el PR #10. Las pantallas P2 a P5 existen como rutas con la página `EnConstruccion`.
+- **Estado de las entregas:** 1 (base, CI y P1) fusionada. 2 (P2): la API fusionada (PR #10) y la web en el PR #11. Las pantallas P3 a P5 existen como rutas con la página `EnConstruccion`.
+- **Semilla:** los estudiantes están inscritos desde el 1 de agosto de 2026, así que una base recién creada ya muestra faltas. Para ver un «Pendiente» a mano hace falta una clase cuya ventana esté abierta en ese momento (por ejemplo, una clase de prueba insertada en la base de desarrollo) y una lectura con `simular:lectura`.
 
 - **Ubicación:**
   - Recomendado: una carpeta `web/` en este mismo repositorio, con su propio `package.json`.

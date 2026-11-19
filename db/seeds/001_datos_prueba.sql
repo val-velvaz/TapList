@@ -44,6 +44,17 @@ FROM (VALUES
 ) AS e (matricula, nombre, apellidos, correo, grupo)
 JOIN grupo g ON g.nombre = e.grupo AND g.ciclo_escolar = '2026-B';
 
+-- El trigger de alta los inscribió con la fecha de hoy, y el día del alta no
+-- cuenta como falta. Para que una base recién creada ya muestre faltas, se
+-- inscriben desde el inicio del ciclo 2026-B (fecha aproximada, solo para
+-- desarrollo).
+UPDATE inscripcion_grupo i
+   SET desde = DATE '2026-08-01'
+  FROM estudiante e
+ WHERE e.id_estudiante = i.id_estudiante
+   AND e.matricula IN ('220000001', '220000002', '220000003', '220000004', '220000005')
+   AND i.desde > DATE '2026-08-01';
+
 -- Credenciales NFC (UID en hexadecimal, 4 y 7 bytes)
 INSERT INTO credencial_nfc (uid, id_estudiante)
 SELECT c.uid, s.id_estudiante

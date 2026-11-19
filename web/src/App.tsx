@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router';
 import { Marco } from './componentes/Marco';
 import { RutaProtegida } from './componentes/RutaProtegida';
+import { Asistencias } from './paginas/asistencias/Asistencias';
 import { AvisoPrivacidad } from './paginas/AvisoPrivacidad';
 import { EnConstruccion } from './paginas/EnConstruccion';
 import { Login } from './paginas/Login';
@@ -25,10 +26,7 @@ export function App() {
       {/* Docente */}
       <Route element={<RutaProtegida roles={['Docente']} />}>
         <Route element={<Marco />}>
-          <Route
-            path="/asistencias"
-            element={<EnConstruccion titulo="Consulta de asistencias" descripcion="Registros de tus grupos · actualización automática" />}
-          />
+          <Route path="/asistencias" element={<Asistencias />} />
           <Route
             path="/estadisticas"
             element={<EnConstruccion titulo="Estadísticas de asistencia" descripcion="Indicadores por grupo y periodo" />}
