@@ -290,6 +290,38 @@ describe('Estadísticas (RF-16) con resultados calculados a mano', () => {
     expect(res.body.estudiantes_con_mas_faltas).toEqual([]);
   });
 
+  it('estudiantes en el grupo: los inscritos en la fecha «hasta» del periodo, no hoy', async () => {
+    // Inscripciones del encabezado. G1 al 31 de octubre: S1, S2, S4 y S7 (S3 se dio de baja el 14,
+    // S5 se cambió a G2 el 19 y S8 se dio de baja el 7). G2: S5 (desde el 19) y S6.
+    const en = async (cookie: string, query: Record<string, string | number>) =>
+      (await estadisticas(cookie, query).expect(200)).body.estudiantes_en_grupo;
+
+    expect(await en(cookies.E, { id_grupo: ids.G1! })).toBe(4);
+    // Baja dentro del periodo: el 13, S3 todavía estaba en G1 (y S5 también).
+    expect(await en(cookies.E, { desde: '2026-10-01', hasta: '2026-10-13', id_grupo: ids.G1! })).toBe(5);
+    // El mismo día de su baja, S3 ya no cuenta.
+    expect(await en(cookies.E, { desde: '2026-10-01', hasta: '2026-10-14', id_grupo: ids.G1! })).toBe(4);
+    // El día de su alta, S4 sí cuenta (aunque ese día no se le espere en la clase).
+    expect(await en(cookies.E, { desde: '2026-10-12', hasta: '2026-10-12', id_grupo: ids.G1! })).toBe(5);
+    // Con una clase, su grupo; sin filtros, todos los grupos del docente (G1 y G2).
+    expect(await en(cookies.E, { id_clase: ids.C3! })).toBe(2);
+    expect(await en(cookies.E, {})).toBe(6);
+    // El docente F da clase en G1 y en G3 (vacío): no ve los de G2.
+    expect(await en(cookies.F, {})).toBe(4);
+    // Un periodo que llega al futuro se recorta a hoy y cuenta a esa fecha.
+    const futuro = (await estadisticas(cookies.E, { id_grupo: ids.G1!, desde: '2026-10-01', hasta: '2027-06-30' }).expect(200)).body;
+    expect(futuro.estudiantes_en_grupo).toBe(4);
+  });
+
+  it('estudiantes en el grupo también va en la exportación, con su fecha', async () => {
+    const res = await descargar('/api/estadisticas/exportar', { desde: '2026-10-01', hasta: '2026-10-13', id_grupo: ids.G1!, formato: 'xlsx' });
+    expect(res.status).toBe(200);
+    expect(valorDe((await hojasXlsx(res.body)).Resumen!, 'Estudiantes en el grupo (al 2026-10-13)')).toBe(5);
+
+    const pdf = await descargar('/api/estadisticas/exportar', { desde: '2026-10-01', hasta: '2026-10-13', id_grupo: ids.G1!, formato: 'pdf' });
+    expect(await textoPdf(pdf.body)).toContain('Estudiantes en el grupo (al 2026-10-13): 5');
+  });
+
   it('aislamiento: el docente F solo ve su clase F1 y E recibe 404 con lo de F', async () => {
     const f = await estadisticas(cookies.F);
     // F1 10-08: esperados S1 S2 S3 S5 (S4 aún no estaba), registraron S1 y S2.
