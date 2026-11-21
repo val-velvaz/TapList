@@ -195,7 +195,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 191 pruebas en nueve archivos:
+La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 193 pruebas en nueve archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -204,7 +204,7 @@ La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). 
 | `tests/lecturas.test.ts` | 26 | Integración de `POST /api/dispositivo/lecturas`, con el reloj fijo y el proceso en la zona `Asia/Tokyo`, para comprobar que no se usa la zona del servidor. |
 | `tests/estudiantes.test.ts` | 38 | Gestión de estudiantes: roles, consulta, alta, credenciales, baja, concurrencia, RNF-06 y reversión de la bitácora. Cada prueba crea sus propios estudiantes para no afectar a las demás. |
 | `tests/asistencias.test.ts` | 18 | Consulta de asistencias del Docente y SSE, con docentes, grupos y clases propios. Las pruebas del SSE levantan el servidor en un puerto real y leen el flujo con `fetch`. |
-| `tests/estadisticas.test.ts` | 19 | Estadísticas con un mes de datos fijos y resultados calculados a mano, y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
+| `tests/estadisticas.test.ts` | 21 | Estadísticas con un mes de datos fijos y resultados calculados a mano (incluido «estudiantes en el grupo» con altas, bajas y un cambio de grupo), y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
 | `tests/orden.test.ts` | 10 | Orden alfabético en español de todas las listas (P2, P3, P4, P5, XLSX y PDF) con la base en configuración «C»: acentos, «ñ», minúsculas y empates en «más faltas». |
 | `tests/faltas.test.ts` | 15 | Faltas y pendientes con el reloj fijo antes, durante y después de la ventana de registro, con los mismos totales en P2, P3 y las exportaciones; y la búsqueda de estudiante de P2. |
 | `tests/uid.test.ts` | 24 | Formato canónico del UID: lo que `esquemaUid` acepta (4, 7 y 10 bytes con mayúsculas, minúsculas, espacios y dos puntos) y lo que rechaza (decimal, ceros perdidos, truncado), y el análisis de `npm run uid:revisar`. |
@@ -819,8 +819,14 @@ La respuesta trae:
 | `resumen` | `sesiones`, `esperados`, `asistencias`, `retardos`, `faltas`, `pendientes` y `porcentaje_asistencia` |
 | `por_semana` | Lo mismo por semana ISO (`semana` = el lunes), para la gráfica de P3 |
 | `por_clase` | Lo mismo por clase |
+| `estudiantes_en_grupo` | Estudiantes inscritos en la fecha final del periodo (ver abajo), para la tarjeta «Estudiantes en el grupo» de P3 |
 | `estudiantes_con_mas_faltas` | Solo quienes tienen al menos una falta (un pendiente no cuenta). Se ordenan por faltas, luego por retardos y luego por apellidos. Traen también sus `pendientes`. Sin UID. |
 
+- `estudiantes_en_grupo`: los estudiantes **inscritos en la fecha final del periodo** (`periodo.hasta`, ya recortada a hoy), no hoy, para que cuadre con el resto de las estadísticas.
+  - **Grupos:** el del filtro `id_grupo`; con `id_clase`, el grupo de esa clase; sin filtros, todos los grupos donde el docente da clase.
+  - **Inscrito en esa fecha:** `desde <= hasta del periodo` y la inscripción sigue abierta o cerró después. Quien se dio de baja o cambió de grupo dentro del periodo ya no cuenta, ni tampoco quien lo hizo ese mismo día. Quien se dio de alta ese día sí cuenta, aunque ese día no se le espere en la clase.
+  - **Ejemplo** (datos de `estadisticas.test.ts`): en G1, al 13 de octubre hay 5; al 14, día de la baja de S3, hay 4.
+  - Va también en los totales del PDF y del XLSX, como «Estudiantes en el grupo (al AAAA-MM-DD)».
 - `esperados` = `asistencias + retardos + faltas`. Un **pendiente** todavía no es ni falta ni asistencia: no cuenta en los esperados ni en el porcentaje, y se informa aparte en `pendientes`.
 - `porcentaje_asistencia` = `(asistencias + retardos) / esperados × 100`, con un decimal. Vale `null` si no hubo esperados.
 
