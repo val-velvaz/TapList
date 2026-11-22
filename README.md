@@ -13,9 +13,9 @@ Hasta ahora incluye:
 - La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada de sus clases con asistencias, retardos, faltas y pendientes, filtros (incluida la búsqueda de estudiante por nombre o matrícula) y aviso en tiempo real con SSE.
 - Las **estadísticas y la exportación** para el Docente (P3, AD-05, RF-16 y RF-06): porcentaje de asistencia, retardos y faltas por grupo, clase y periodo, asistencia por semana, estudiantes con más faltas, y exportación a PDF y XLSX.
 
-- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado, las rutas por rol y la consulta de asistencias del Docente (P2) con aviso en vivo y exportación. Ver [Página web](#página-web).
+- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado, las rutas por rol la consulta de asistencias del Docente (P2) con aviso en vivo y exportación, y sus estadísticas (P3) con gráfica por semana. Ver [Página web](#página-web).
 
-Faltan las pantallas P3 a P5 de la web y el firmware del lector, que programa el equipo.
+Faltan las pantallas P4 y P5 de la web y el firmware del lector, que programa el equipo.
 
 ## Contenido
 
@@ -879,7 +879,7 @@ La web vive en la carpeta `web/`, con su propio `package.json`: **Vite, React, T
 |---|---|---|
 | 1 | Proyecto, CI, inicio de sesión (P1), encabezado y rutas por rol | Lista |
 | 2 | Consulta de asistencias (P2) con aviso en vivo y exportación | Lista |
-| 3 | Estadísticas (P3) | Pendiente |
+| 3 | Estadísticas (P3) | Lista |
 | 4 | Gestión de estudiantes (P4 y P5) | Pendiente |
 | 5 | Express sirve la web en producción | Pendiente |
 
@@ -923,7 +923,7 @@ Si la API corre en otra dirección, indícala al arrancar la web con la variable
 | `/login` | P1 · Inicio de sesión | Todos |
 | `/aviso-de-privacidad` | Aviso de privacidad (borrador) | Todos |
 | `/asistencias` | P2 · Consulta de asistencias | Docente |
-| `/estadisticas` | P3 · Estadísticas (en construcción) | Docente |
+| `/estadisticas` | P3 · Estadísticas | Docente |
 | `/estudiantes` | P4 · Gestión de estudiantes (en construcción) | Administrador |
 | `/estudiantes/nuevo` | P5 · Agregar estudiante (en construcción) | Administrador |
 
@@ -957,7 +957,20 @@ Todas las pantallas llaman a la API con una sola función, `pedir` (`web/src/api
 | «Lector: Aula 3» (P2) | El nombre del dispositivo, por ejemplo «Módulo X, aula 101» | Es el `nombre_ubicacion` que se registró para el lector |
 | Fechas «10/10/2026» en los filtros (P2) | Campo de fecha del navegador | Se muestra en el formato del idioma del navegador; en español, día/mes/año |
 
-La tarjeta «Estudiantes en el grupo» de P3 se decide en el plan de la entrega 3.
+| «Periodo 01/09/2026 – 17/10/2026» en un solo campo (P3) | Dos campos de fecha del navegador, uno junto al otro | El navegador no tiene un selector de rango; así cada fecha se escribe o se elige por separado |
+| Barras sin número (P3) | Cada barra lleva su porcentaje escrito encima y, debajo, la fecha del lunes | Para leerla sin el mouse; las semanas sin clases se marcan «sin clases» |
+| Tarjetas sin notas (P3) | «+N pendientes» bajo las faltas, si los hay, y «al dd/mm/aaaa» bajo «Estudiantes en el grupo» | Un pendiente no es falta, y el número de estudiantes es a la fecha final del periodo |
+
+### P3 · Estadísticas
+
+- **Filtros:** Grupo, Clase (solo las del grupo elegido) y Periodo (inicio y fin), con «Actualizar». Al entrar, **las últimas 6 semanas**: del lunes de hace 5 semanas hasta hoy. Los filtros viven en la dirección de la página, igual que en P2. La web revisa el periodo antes de pedirlo (el fin no antes del inicio, a lo más 366 días).
+- **Tarjetas:** % de asistencia («—» si no hubo esperados), Retardos, Faltas (con «+N pendientes» debajo si los hay; no se suman) y «Estudiantes en el grupo», contados a la fecha final del periodo (`estudiantes_en_grupo`).
+- **Gráfica «Asistencia por semana (%)»** (`GraficaSemanal.tsx`), con barras propias, sin librería:
+  - Una columna por **cada** semana del periodo, del lunes del inicio al lunes del fin. La API solo devuelve las semanas con sesiones; las demás se marcan **«sin clases»**, sin barra y **nunca como 0 %**. Una semana con clases y 0 % sí muestra «0 %».
+  - La altura es proporcional al porcentaje (160 px para 100 %), en el azul de los bocetos, con la esquina superior redondeada.
+  - **Se lee sin el mouse:** cada barra tiene su porcentaje escrito encima. Para lectores de pantalla, la gráfica es una lista y cada semana tiene una descripción completa («Semana del 19/10/2026 al 25/10/2026: 50 % de asistencia, 2 sesiones, 3 faltas»). Con el mouse o el teclado (Tab), una nota muestra esa misma descripción.
+- **Estudiantes con más faltas:** Estudiante, Faltas y % Asist., los 10 primeros que devuelve la API.
+- **Exportar PDF o XLSX:** con los filtros aplicados.
 
 ### P2 · Consulta de asistencias
 
@@ -980,13 +993,14 @@ La tarjeta «Estudiantes en el grupo» de P3 se decide en el plan de la entrega 
 
 ### Pruebas de la web
 
-Hay 56 pruebas en cuatro archivos de `web/src/pruebas/`, con Vitest y Testing Library. Montan la aplicación completa y sustituyen `fetch` por una API simulada; una llamada que la prueba no espera la hace fallar.
+Hay 78 pruebas en cinco archivos de `web/src/pruebas/`, con Vitest y Testing Library. Montan la aplicación completa y sustituyen `fetch` por una API simulada; una llamada que la prueba no espera la hace fallar.
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
 | `login.test.tsx` | 14 | Los elementos del boceto, la entrada de cada rol a su pantalla, `redirigirA` externo, `401`, `429`, `400` por campo, sin red, `500`, validación sin llamar a la API, Mostrar/Ocultar, «¿Olvidaste tu contraseña?», el aviso de privacidad y que no se guarda nada en el navegador |
 | `sesion.test.tsx` | 11 | Rutas protegidas sin sesión, sesión ya abierta, inicio por rol, «Sin permiso» en ambos sentidos, página no encontrada, estado de carga, cierre de sesión, y que un `401` posterior lleva al login mientras que un `403` o un `404` no |
 | `asistencias.test.tsx` | 23 | P2: los elementos del boceto con una fila de cada estado, la semana por defecto, filtros desde la dirección y con «Buscar» y «Limpiar», clases según el grupo, fechas invertidas, paginación, lista vacía, en vivo (conexión, lectura nueva, reconexión, `sesion_terminada`, reintento tras un corte definitivo y cierre al salir), refresco de pendientes, exportación con filtros y `422`, `404`, sin red y `401`. El SSE se simula con `EventSourceFalso` |
+| `estadisticas.test.tsx` | 22 | P3: los elementos del boceto, los pendientes aparte de las faltas, estudiantes en el grupo a la fecha final del periodo, el periodo inicial de 6 semanas, filtros desde la dirección y con «Actualizar», periodos inválidos, «más faltas», una semana sin clases que nunca se dibuja como 0 %, la descripción accesible de cada semana, barras proporcionales, exportación y errores |
 | `cliente.test.ts` | 8 | `pedir`: JSON, `204`, mensajes y detalles de la API, mensajes propios por código, sin red, petición cancelada y aviso de pérdida de sesión solo con `401`; y `rutaDeInicio` |
 
 Para confirmar que detectan errores reales, se rompió el código a propósito tres veces en la entrega 1: sin revisar el rol en `RutaProtegida` fallaron 2 pruebas; sin avisar del `401`, 2; y aceptando cualquier `redirigirA`, 1. En la entrega 2, siete veces, y cada una hizo fallar al menos una prueba: una lectura nueva que no recarga la lista, pendientes que no se refrescan, `sesion_terminada` que no cierra la sesión, una reconexión que no recarga, una exportación sin filtros, la semana por defecto un día más larga y «Pendiente» pintado como «Falta».
@@ -994,6 +1008,8 @@ Para confirmar que detectan errores reales, se rompió el código a propósito t
 Además, la entrega 1 se probó a mano en un navegador contra la API real con la semilla: entrada de los dos roles, mensaje de credenciales incorrectas, recarga con la sesión abierta, «Sin permiso» y cierre de sesión. La cookie llegó como `httpOnly` y `SameSite=Strict`, y `document.cookie` quedó vacío.
 
 La entrega 2 se probó igual, con la semilla y lecturas del simulador: los cuatro estados en la tabla, una lectura nueva que cambió una fila de «Pendiente» a «Retardo» en menos de un segundo sin recargar la página, la búsqueda «ramirez» (sin acento), la descarga del PDF con el filtro aplicado y la vista en un teléfono de 390 px.
+
+La entrega 3 se probó igual, con cinco semanas de lecturas de demostración en la base de desarrollo y una semana sin clases: tarjetas, gráfica con la semana «sin clases», la nota al enfocar una barra, el cambio de filtros y periodo, la descarga del XLSX y la vista en un teléfono de 390 px. Al romper el código a propósito siete veces (por ejemplo, dibujar «sin clases» como 0 %, barras no proporcionales o contar los estudiantes a hoy), cada vez falló al menos una prueba.
 
 ## Decisiones técnicas
 
@@ -1125,9 +1141,11 @@ web/                         página web (Vite, React y TypeScript), con su prop
   src/api/cliente.ts         pedir(): única puerta hacia la API, con el manejo común de errores
   src/sesion/                ContextoSesion (usuario actual, entrar y salir) y rutas de inicio por rol
   src/api/asistencias.ts     tipos y llamadas de P2 (lista, filtros y exportación)
+  src/api/estadisticas.ts    tipos y llamadas de P3
   src/componentes/           Marco (encabezado y menú), RutaProtegida y Paginacion
   src/paginas/               Login (P1), AvisoPrivacidad, SinPermiso, NoEncontrada y EnConstruccion
   src/paginas/asistencias/   Asistencias (P2) y useEnVivo (SSE)
+  src/paginas/estadisticas/  Estadisticas (P3) y GraficaSemanal
   src/utilidades/fechas.ts   fechas y horas para mostrar y para los filtros
   src/pruebas/               pruebas de la web
 ```
@@ -1139,7 +1157,7 @@ Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta e
 - **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
 - **Recuperación de contraseña:** no existe. El boceto de P1 tiene «¿Olvidaste tu contraseña?», y la web solo pide contactar al administrador. Hacerla de verdad necesita envío de correos y un token de un solo uso; mientras tanto, un administrador tendría que cambiar la contraseña directamente en la base.
 - **Aviso de privacidad:** la página `/aviso-de-privacidad` es un borrador marcado como tal. El texto definitivo (LFPDPPP) lo redacta el equipo.
-- **Web:** faltan las entregas 2 a 5 (ver [Página web](#página-web)).
+- **Web:** faltan las entregas 4 y 5 (ver [Página web](#página-web)).
 - El firmware del ESP32 lo programa el equipo en `firmware/`.
 - **Estadísticas, siguientes pasos:**
   - Una tabla `dia_inhabil` opcional, si la escuela quiere contar como faltas los días en que todo el grupo faltó.
