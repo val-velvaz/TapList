@@ -2,7 +2,7 @@
 
 Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto, lo que falta y cómo debes trabajar en este repositorio. Léelo completo al empezar cada sesión.
 
-> **Estado actualizado al 15 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
+> **Estado actualizado al 21 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
 
 ---
 
@@ -84,11 +84,13 @@ El equipo entregó un documento con el modelo 4+1 que es la referencia del dise�
 
 ## 2. Entorno de Valeria
 
-- **Windows**, con la terminal en alemán: verás mensajes como «Der Befehl … konnte nicht gefunden werden».
+- **Trabaja en dos computadoras: Windows y Parrot OS** (Linux basado en Debian, con zsh). Pregúntale en cuál está antes de darle comandos; si no lo dice, da los dos.
+- **En Parrot OS** (desde el 19 de noviembre): Node 24 con **nvm** (`nvm install` y `nvm use` leen `.nvmrc`; si una terminal no encuentra `npm`, `nvm use`). PostgreSQL de `apt`, con el usuario `postgres` con contraseña `postgres` **solo para desarrollo** (en Linux no entra sin contraseña por `localhost`), así que su `.env` usa `PGPASSWORD=postgres` y `psql` necesita `PGPASSWORD=postgres psql -h localhost -U postgres`.
+- **En Windows**, la terminal está en alemán: verás mensajes como «Der Befehl … konnte nicht gefunden werden».
 - **Node 24 LTS** con nvm-windows, en `C:\nvm4w\nodejs`. El proyecto exige `>=24 <25` (`.nvmrc` y `engines`).
 - **GitHub CLI** en `C:\Program Files\GitHub CLI`, con sesión iniciada como `val-velvaz`.
 - **Terminales antiguas:** las que se abrieron antes de instalar nvm-windows y `gh` no encuentran `node` ni `gh`. Una terminal nueva sí los encuentra. Si te pasa, agrega esas dos rutas al `PATH` del comando; no reinstales nada.
-- **PostgreSQL 18 local.** `psql` entra como `postgres` sin pedir contraseña (por `pgpass.conf` o por confianza local). El `.env` usa `PGUSER=postgres` con `PGPASSWORD` vacío.
+- **PostgreSQL 18 local en Windows.** `psql` entra como `postgres` sin pedir contraseña (por `pgpass.conf` o por confianza local). Ahí el `.env` usa `PGUSER=postgres` con `PGPASSWORD` vacío.
 - **La carpeta de usuario de Windows es un repositorio de Git**, probablemente creado por accidente. Trabaja siempre dentro de la carpeta del proyecto, que tiene su propio `.git`. Nunca hagas commits en el repositorio de la carpeta de usuario.
 - **`curl` en Windows rompe los acentos** si el JSON va en la línea de comandos: «Núñez» llega como «N�ez». Para probar a mano con acentos, manda el cuerpo desde un archivo UTF-8 (`curl --data-binary @cuerpo.json`) o usa `Invoke-RestMethod`. No es un problema de la API.
 - **`main` está protegida** con un ruleset: exige los checks «Tipos, compilación y pruebas» y «Web: tipos, compilación y pruebas» y bloquea los *force push*. No exige aprobaciones, porque Valeria trabaja sola en el repositorio y GitHub no deja aprobar los propios PR.
@@ -261,7 +263,7 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **191 pruebas** en 9 archivos:
+Según el README, hay **193 pruebas** en 9 archivos:
 
 | Archivo | Pruebas |
 |---|---|
@@ -270,7 +272,7 @@ Según el README, hay **191 pruebas** en 9 archivos:
 | `lecturas.test.ts` | 26 |
 | `estudiantes.test.ts` | 38 |
 | `asistencias.test.ts` | 18 |
-| `estadisticas.test.ts` | 19 |
+| `estadisticas.test.ts` | 21 |
 | `orden.test.ts` | 10 |
 | `uid.test.ts` | 24 |
 | `faltas.test.ts` | 15 |
@@ -289,7 +291,7 @@ Cómo están hechas:
 
 ---
 
-## 4. Estado del proyecto (al 15 de noviembre de 2026)
+## 4. Estado del proyecto (al 21 de noviembre de 2026)
 
 ### Historial de PR
 
@@ -305,7 +307,8 @@ Cómo están hechas:
 | #8 | `docs/lector-nfc` | Formato canónico del UID, guía del firmware, `uid:revisar` y longitud exacta del UID en la API | Fusionado el 15 de noviembre (`9c4b386`) |
 | #9 | `feat/web-base-login` | Web, entrega 1: proyecto en `web/`, trabajo de CI, login (P1), encabezado y rutas por rol | Fusionado (`920daed`) |
 | #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Fusionado (`1076ce0`) |
-| #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Abierto |
+| #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Fusionado (`1b74aac`) |
+| #12 | `feat/estudiantes-en-grupo` | API para la entrega 3: `estudiantes_en_grupo` en P3, a la fecha final del periodo | Abierto |
 
 ### Avance aproximado
 
@@ -313,7 +316,7 @@ Cómo están hechas:
 |---|---|---|
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
-| Web | 25 % | ≈ 40 %. Entregas 1 y 2 de 5 (la 2, en el PR #11). |
+| Web | 25 % | ≈ 40 %. Entregas 1 y 2 de 5, fusionadas. |
 | Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Están el contrato y la guía, sin código. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
 | **Total** | | **≈ 66 %** |
@@ -340,11 +343,15 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 - **Referencia visual:** los bocetos de la Actividad 11 (P1 a P5), que Valeria compartió en PDF. La web debe ser lo más fiel posible a ellos; los colores y las medidas ya están como variables en `web/src/estilos.css`. El PDF no está en el repositorio: si no lo tienes en la sesión, pídeselo.
 - **Diferencias entre los bocetos y la API.** En el plan de la entrega que toque cada una, **propón si conviene agregarla a la API o ajustar la pantalla, con ventajas y desventajas**, y espera la decisión:
   - Entrega 2 (P2): **decidido (opción A en las dos):** la API agrega las filas de «Falta» y «Pendiente» y la búsqueda `q` por nombre o matrícula (PR #10). La web de P2 va en un PR aparte, después de fusionar el #10, y su plan corto se presenta antes.
-  - Entrega 3 (P3): la tarjeta «Estudiantes en el grupo», que `GET /api/estadisticas` no devuelve.
+  - Entrega 3 (P3): **decidido el 21 de noviembre:**
+    - La tarjeta «Estudiantes en el grupo» sale de la API (`estudiantes_en_grupo`, PR #12): inscritos en la fecha «Hasta» del periodo, no hoy.
+    - La gráfica por semana se dibuja con barras propias (sin Recharts). Una semana sin sesiones se muestra como «sin clases», **nunca como 0 %**, y cada porcentaje se puede leer sin el mouse (visible o accesible para lectores de pantalla).
+    - El periodo inicial son las últimas 6 semanas.
+    - La web de P3 va en un PR aparte, después de fusionar el #12.
   - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
   - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
 - **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas», y ya está en el ruleset de `main` junto con el de la API.
-- **Estado de las entregas:** 1 (base, CI y P1) fusionada. 2 (P2): la API fusionada (PR #10) y la web en el PR #11. Las pantallas P3 a P5 existen como rutas con la página `EnConstruccion`.
+- **Estado de las entregas:** 1 y 2 fusionadas (P1 y P2). 3 (P3): primero la API, en el PR #12. Las pantallas P3 a P5 existen como rutas con la página `EnConstruccion`.
 - **Semilla:** los estudiantes están inscritos desde el 1 de agosto de 2026, así que una base recién creada ya muestra faltas. Para ver un «Pendiente» a mano hace falta una clase cuya ventana esté abierta en ese momento (por ejemplo, una clase de prueba insertada en la base de desarrollo) y una lectura con `simular:lectura`.
 
 - **Ubicación:**

@@ -19,6 +19,13 @@ import type { FiltrosEstadisticas } from './estadisticas.schemas.js';
  *    falta ni asistencia, así que no cuenta en los esperados ni en el
  *    porcentaje; se informa aparte en `pendientes`.
  *  - Porcentaje de asistencia: (asistencias + retardos) / esperados × 100.
+ *  - Estudiantes en el grupo: los inscritos en la fecha final del periodo
+ *    (`hasta`, ya recortada a hoy) en los grupos elegidos: el grupo del
+ *    filtro, el grupo de la clase del filtro o, sin filtro, todos los grupos
+ *    donde el docente da clase. Inscrito en esa fecha significa
+ *    desde <= hasta y (sin fecha de baja o baja posterior a hasta). Así, quien
+ *    se dio de baja dentro del periodo ya no cuenta, igual que en el resto de
+ *    las estadísticas a esa fecha; quien se dio de baja ese mismo día, tampoco.
  */
 
 export interface Conteo {
@@ -35,6 +42,8 @@ export interface Conteo {
 
 export interface Estadisticas {
   periodo: { desde: string; hasta: string };
+  /** Estudiantes inscritos en la fecha `periodo.hasta` en los grupos elegidos. */
+  estudiantes_en_grupo: number;
   filtros: {
     grupo: { id: number; nombre: string } | null;
     clase: { id: number; materia: string } | null;
@@ -89,11 +98,17 @@ export async function calcularEstadisticas(
   const top = parametro(filtros.top);
   const idGrupo = parametro(filtros.id_grupo ?? null);
   const idClase = parametro(filtros.id_clase ?? null);
+  const fechaFinal = parametro(hasta);
 
   const { rows } = await pool.query(
     `WITH ${cte}
 SELECT
   (SELECT row_to_json(r) FROM (SELECT ${CONTEO} FROM registros d) r) AS resumen,
+  (SELECT count(DISTINCT i.id_estudiante)::int
+     FROM inscripcion_grupo i
+    WHERE i.id_grupo IN (SELECT c.id_grupo FROM clases c)
+      AND i.desde <= ${fechaFinal}::date
+      AND (i.hasta IS NULL OR i.hasta > ${fechaFinal}::date)) AS estudiantes_en_grupo,
   (SELECT coalesce(json_agg(r ORDER BY r.semana), '[]') FROM (
      SELECT to_char(date_trunc('week', d.fecha), 'YYYY-MM-DD') AS semana, ${CONTEO}
        FROM registros d GROUP BY date_trunc('week', d.fecha)) r) AS por_semana,
@@ -122,6 +137,7 @@ SELECT
   const fila = rows[0];
   return {
     periodo: { desde: filtros.desde, hasta },
+    estudiantes_en_grupo: fila.estudiantes_en_grupo,
     filtros: { grupo: fila.grupo, clase: fila.clase },
     resumen: fila.resumen,
     por_semana: fila.por_semana,

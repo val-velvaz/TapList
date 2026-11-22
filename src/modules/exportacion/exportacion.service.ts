@@ -250,6 +250,7 @@ export async function exportarEstadisticas(
     ['Retardos', est.resumen.retardos],
     ['Faltas', est.resumen.faltas],
     ['Pendientes', est.resumen.pendientes],
+    [`Estudiantes en el grupo (al ${est.periodo.hasta})`, est.estudiantes_en_grupo],
     ['% asistencia', est.resumen.porcentaje_asistencia ?? '—'],
   ];
 
