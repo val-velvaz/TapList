@@ -606,3 +606,283 @@ a,
     padding-right: 8px;
   }
 }
+
+/* ---------- P3 · Estadísticas ---------- */
+.p3__barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 18px;
+}
+
+.p3__filtros {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 14px;
+}
+
+.p3__barra .p2__exportar {
+  flex: 0 0 auto;
+}
+
+.p3__filtros .filtro {
+  flex: 0 1 120px;
+  min-width: 100px;
+}
+
+.p3__filtros .filtro--ancho {
+  flex: 0 1 190px;
+}
+
+/* En la tabla de «más faltas» los nombres pueden partirse en dos líneas. */
+.p3 .tabla td:first-child {
+  white-space: normal;
+}
+
+.p3__filtros .filtro--periodo {
+  flex: 0 1 auto;
+}
+
+.filtro--periodo {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.filtro--periodo legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+}
+
+.periodo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.periodo input {
+  min-width: 0;
+}
+
+.p3__periodo {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+}
+
+.p3__contenido[aria-busy='true'] {
+  opacity: 0.6;
+}
+
+.tarjetas {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.tarjeta {
+  padding: 14px 18px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.tarjeta__titulo {
+  margin: 0;
+  color: var(--texto-suave);
+}
+
+.tarjeta__valor {
+  margin: 4px 0 0;
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--texto);
+}
+
+.tarjeta__valor--retardo {
+  color: var(--ambar-texto);
+}
+
+.tarjeta__valor--falta {
+  color: var(--error-texto);
+}
+
+.tarjeta__nota {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+}
+
+.p3__paneles {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.panel {
+  padding: 16px 18px;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.panel__titulo {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.panel__vacio {
+  color: var(--texto-suave);
+}
+
+.tabla__numero {
+  text-align: right;
+}
+
+/* Gráfica de columnas: 0 a 100 %, una columna por semana. */
+.grafica {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--borde);
+}
+
+.grafica__columna {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  border-radius: 4px;
+  outline-offset: 2px;
+}
+
+.grafica__zona {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+  /* 160 px para una barra de 100 % (ALTO_100) más el porcentaje escrito encima. */
+  height: 186px;
+}
+
+.grafica__valor {
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+  white-space: nowrap;
+}
+
+.grafica__barra {
+  display: block;
+  width: 100%;
+  max-width: 40px;
+  background: var(--azul);
+  border-radius: 4px 4px 0 0;
+}
+
+.grafica__sin-clases {
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  font-size: 0.75rem;
+  color: var(--texto-suave);
+  border: 1px dashed var(--borde);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.grafica__etiqueta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0 4px;
+  font-size: 0.82rem;
+  color: var(--texto-suave);
+  white-space: nowrap;
+}
+
+.grafica__fecha {
+  font-size: 0.72rem;
+}
+
+.grafica__nota {
+  position: absolute;
+  bottom: calc(100% - 12px);
+  left: 50%;
+  z-index: 1;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  color: #fff;
+  background: var(--texto);
+  border-radius: 6px;
+  transform: translateX(-50%);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.grafica__columna:hover .grafica__nota,
+.grafica__columna:focus .grafica__nota {
+  visibility: visible;
+}
+
+.grafica__columna:first-child .grafica__nota {
+  left: 0;
+  transform: none;
+}
+
+.grafica__columna:last-child .grafica__nota {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.grafica__vacia {
+  color: var(--texto-suave);
+}
+
+@media (max-width: 900px) {
+  .tarjetas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .p3__paneles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .tarjeta__valor {
+    font-size: 1.7rem;
+  }
+
+  .grafica {
+    gap: 4px;
+  }
+
+  .grafica__valor {
+    font-size: 0.7rem;
+  }
+
+  .grafica__sin-clases {
+    padding: 2px;
+    white-space: normal;
+    text-align: center;
+  }
+}
