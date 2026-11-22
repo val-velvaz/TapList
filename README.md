@@ -163,6 +163,19 @@ npm run build   # compila a dist/
 npm start       # ejecuta la versión compilada
 ```
 
+El servidor escucha en **todas las interfaces de red**: responde en `localhost` y también a otros equipos de la misma red, como un lector ESP32 de prueba. En desarrollo, al arrancar muestra esas direcciones («Desde otro equipo de esta red: http://192.168.1.34:3000»). En producción, quién llega lo deciden el firewall o el proxy inverso.
+
+### Probar con el lector ESP32 real (solo desarrollo)
+
+[`docs/prueba-con-dispositivo.md`](docs/prueba-con-dispositivo.md) explica cómo conectar el ESP32 a la API de una computadora del equipo: dirección IP, firewall, hotspot, colores esperados y límites. Dos herramientas ayudan, y las dos se niegan a correr con `NODE_ENV=production`:
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev:clase-ahora [-- --minutos N]` | Crea (o mueve) la «Clase de prueba (dispositivo)» del grupo D01 para que empiece en N minutos (5 por defecto), borra sus lecturas anteriores y muestra hasta qué hora cada lectura da Asistencia, Retardo o Rechazada. Avisa si se cruza con otra clase del grupo |
+| `npm run dev:vincular [-- <uid> --matricula <m> [--forzar]]` | Sin argumentos, lista los estudiantes de D01 con su UID enmascarado. Con argumentos, revisa el UID como `uid:revisar` y lo vincula al estudiante (reemplaza su credencial anterior), con bitácora. Con avisos de formato, pide `--forzar` |
+
+El código está en `src/desarrollo/`, que no se compila a `dist/`.
+
 ## Pruebas
 
 ```bash
@@ -195,7 +208,7 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
 
-La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 193 pruebas en nueve archivos:
+La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 206 pruebas en diez archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -207,6 +220,7 @@ La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). 
 | `tests/estadisticas.test.ts` | 21 | Estadísticas con un mes de datos fijos y resultados calculados a mano (incluido «estudiantes en el grupo» con altas, bajas y un cambio de grupo), y exportación PDF/XLSX. Los archivos se leen con `exceljs` y `unpdf`. |
 | `tests/orden.test.ts` | 10 | Orden alfabético en español de todas las listas (P2, P3, P4, P5, XLSX y PDF) con la base en configuración «C»: acentos, «ñ», minúsculas y empates en «más faltas». |
 | `tests/faltas.test.ts` | 15 | Faltas y pendientes con el reloj fijo antes, durante y después de la ventana de registro, con los mismos totales en P2, P3 y las exportaciones; y la búsqueda de estudiante de P2. |
+| `tests/desarrollo.test.ts` | 13 | Herramientas de prueba con el dispositivo: clase de prueba con el reloj fijo y lecturas reales por la API, repetición, choque con otra clase, vinculación con avisos, reemplazo y conflicto, negativa en producción, y que un solo lector que prueba seguido no se bloquea. |
 | `tests/uid.test.ts` | 24 | Formato canónico del UID: lo que `esquemaUid` acepta (4, 7 y 10 bytes con mayúsculas, minúsculas, espacios y dos puntos) y lo que rechaza (decimal, ceros perdidos, truncado), y el análisis de `npm run uid:revisar`. |
 
 En las pruebas, `vitest.config.ts` cambia dos valores:
@@ -1091,15 +1105,19 @@ db/
   preparar-base.ts           crea la BD, aplica migraciones y semilla
 docs/contrato-dispositivo.md contrato de la API para el firmware del ESP32
 docs/guia-firmware.md        guía del firmware: capa del lector, conexiones y pruebas
+docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo
 scripts/
   db-setup.ts                npm run db:setup
   dispositivo-clave.ts       npm run dispositivo:clave
   simular-lectura.ts         npm run simular:lectura
   uid-revisar.ts             npm run uid:revisar
+  dev-clase-ahora.ts         npm run dev:clase-ahora (solo desarrollo)
+  dev-vincular.ts            npm run dev:vincular (solo desarrollo)
 src/
   config/env.ts              variables de entorno validadas con zod
   db/pool.ts                 pool de conexiones a PostgreSQL
   db/orden.ts                ORDEN_ES: orden alfabético en español para los ORDER BY
+  desarrollo/                herramientas de prueba con el dispositivo (no van en dist/)
   db/transaccion.ts          conTransaccion: BEGIN / COMMIT / ROLLBACK
   eventos/eventos.ts         EventEmitter tipado (asistencia:registrada)
   middleware/                requiereSesion, requiereRol, requiereDispositivo,

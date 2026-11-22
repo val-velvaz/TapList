@@ -2,7 +2,7 @@
 
 Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto, lo que falta y cómo debes trabajar en este repositorio. Léelo completo al empezar cada sesión.
 
-> **Estado actualizado al 21 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
+> **Estado actualizado al 22 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
 
 ---
 
@@ -126,6 +126,8 @@ npm run db:setup -- --reset          # borra "taplist" y la recrea
 npm run dispositivo:clave -- <id>    # genera o rota la clave de un lector y la muestra una sola vez
 npm run simular:lectura -- <uid> [--leido-en <ISO>]   # simula el ESP32
 npm run uid:revisar -- <valor> [--comparar <otro>]    # revisa el formato de un UID y lo compara con otro
+npm run dev:clase-ahora [-- --minutos N]              # SOLO DESARROLLO: clase de prueba de D01 que empieza en N minutos
+npm run dev:vincular [-- <uid> --matricula <m>]       # SOLO DESARROLLO: vincula una tarjeta real a un estudiante de D01
 
 # La web, dentro de web/ (con la API corriendo en otra terminal):
 npm run dev                          # web en http://localhost:5173, con /api reenviado a la API
@@ -141,9 +143,11 @@ db/seeds/001_datos_prueba.sql   datos ficticios solo para desarrollo
 db/preparar-base.ts             crea la base, migra y carga la semilla
 docs/contrato-dispositivo.md    contrato de la API para el firmware del ESP32 (incluye el formato canónico del UID)
 docs/guia-firmware.md           guía para el equipo: capa del lector, conexiones y lista de pruebas
-scripts/                        db-setup, dispositivo-clave, simular-lectura, uid-revisar
+docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo (IP, firewall, hotspot)
+scripts/                        db-setup, dispositivo-clave, simular-lectura, uid-revisar, dev-clase-ahora, dev-vincular
 src/app.ts                      arma Express y monta las rutas (lo usan el servidor y las pruebas)
-src/server.ts                   punto de entrada; cierra las conexiones SSE al apagar
+src/server.ts                   punto de entrada; escucha en todas las interfaces y, en desarrollo, muestra las IP de red; cierra las conexiones SSE al apagar
+src/desarrollo/                 herramientas solo de desarrollo (clase de prueba, vincular tarjetas); excluidas de dist/
 src/config/env.ts               variables de entorno validadas con zod
 src/db/pool.ts                  pool de pg; cada sesión usa timezone = ZONA_HORARIA_ESCUELA
 src/db/transaccion.ts           conTransaccion(fn): BEGIN / COMMIT / ROLLBACK
@@ -155,7 +159,7 @@ src/modules/<módulo>/           <módulo>.routes / .controller / .service / .sc
   auth, lecturas (+ tiempo.ts), estudiantes, grupos, bitacora, dispositivos,
   asistencias (+ registros.ts: faltas y pendientes; tiempoReal.ts: SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
 src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion, busqueda
-tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas
+tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas, desarrollo
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 web/                            página web: Vite, React, TypeScript y React Router, con su propio package.json
   vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
@@ -263,7 +267,7 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **193 pruebas** en 9 archivos:
+Según el README, hay **206 pruebas** en 10 archivos:
 
 | Archivo | Pruebas |
 |---|---|
@@ -276,6 +280,7 @@ Según el README, hay **193 pruebas** en 9 archivos:
 | `orden.test.ts` | 10 |
 | `uid.test.ts` | 24 |
 | `faltas.test.ts` | 15 |
+| `desarrollo.test.ts` | 13 |
 
 Cómo están hechas:
 
@@ -291,7 +296,7 @@ Cómo están hechas:
 
 ---
 
-## 4. Estado del proyecto (al 21 de noviembre de 2026)
+## 4. Estado del proyecto (al 22 de noviembre de 2026)
 
 ### Historial de PR
 
@@ -308,7 +313,8 @@ Cómo están hechas:
 | #9 | `feat/web-base-login` | Web, entrega 1: proyecto en `web/`, trabajo de CI, login (P1), encabezado y rutas por rol | Fusionado (`920daed`) |
 | #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Fusionado (`1076ce0`) |
 | #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Fusionado (`1b74aac`) |
-| #12 | `feat/estudiantes-en-grupo` | API para la entrega 3: `estudiantes_en_grupo` en P3, a la fecha final del periodo | Abierto |
+| #12 | `feat/estudiantes-en-grupo` | API para la entrega 3: `estudiantes_en_grupo` en P3, a la fecha final del periodo | Fusionado (`05dd375`) |
+| #13 | `chore/prueba-dispositivo` | Prueba con el ESP32 real: `dev:clase-ahora`, `dev:vincular` y `docs/prueba-con-dispositivo.md` | Abierto |
 
 ### Avance aproximado
 
@@ -351,7 +357,7 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
   - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
   - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
 - **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas», y ya está en el ruleset de `main` junto con el de la API.
-- **Estado de las entregas:** 1 y 2 fusionadas (P1 y P2). 3 (P3): primero la API, en el PR #12. Las pantallas P3 a P5 existen como rutas con la página `EnConstruccion`.
+- **Estado de las entregas:** 1 y 2 fusionadas (P1 y P2). 3 (P3): la API fusionada (PR #12); falta la web. Las pantallas P3 a P5 existen como rutas con la página `EnConstruccion`.
 - **Semilla:** los estudiantes están inscritos desde el 1 de agosto de 2026, así que una base recién creada ya muestra faltas. Para ver un «Pendiente» a mano hace falta una clase cuya ventana esté abierta en ese momento (por ejemplo, una clase de prueba insertada en la base de desarrollo) y una lectura con `simular:lectura`.
 
 - **Ubicación:**
@@ -382,7 +388,7 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 
 Lo hacen los compañeros de Valeria, que tienen poca experiencia con GitHub. **Tú no escribes código en `firmware/`.**
 
-- **Sus guías son `docs/contrato-dispositivo.md` y `docs/guia-firmware.md`.** Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
+- **Sus guías son `docs/contrato-dispositivo.md`, `docs/guia-firmware.md` y, para probar el ESP32 contra la computadora de Valeria, `docs/prueba-con-dispositivo.md`.** Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
 - **Lector previsto: RC522 (MFRC522), sin confirmar** (decisión del 15 de noviembre). Podría terminar siendo un PN532 u otro. **Cambiar de lector solo afecta a la capa del lector en el firmware** (una interfaz de dos funciones y una implementación por modelo, elegida con un `#define`): no toca el servidor, el contrato ni el resto del firmware.
 - **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta.
 - **Pendiente urgente:** que el equipo confirme el modelo del lector, compruebe que la credencial de la escuela es compatible (13.56 MHz, ISO 14443A) y pase la lista de pruebas de la guía. Si el UID no sale en el formato canónico, las credenciales se vinculan bien pero salen `RECHAZADA` en el aula; `npm run uid:revisar` sirve para encontrar la diferencia.
