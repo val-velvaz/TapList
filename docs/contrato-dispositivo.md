@@ -198,6 +198,8 @@ cada 30 s, si hay red y la cola no está vacía:
 
 ## Probar sin el ESP32
 
+Para probar **con** el ESP32 real contra la computadora de un compañero, en la misma red Wi-Fi, sigue [prueba-con-dispositivo.md](prueba-con-dispositivo.md).
+
 Desde el repositorio de la API, con el servidor corriendo (`npm run dev`):
 
 ```bash

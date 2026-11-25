@@ -16,6 +16,8 @@
     "dispositivo:clave": "tsx scripts/dispositivo-clave.ts",
     "simular:lectura": "tsx scripts/simular-lectura.ts",
     "uid:revisar": "tsx scripts/uid-revisar.ts",
+    "dev:clase-ahora": "tsx scripts/dev-clase-ahora.ts",
+    "dev:vincular": "tsx scripts/dev-vincular.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

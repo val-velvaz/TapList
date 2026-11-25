@@ -322,7 +322,7 @@ Antes de instalar un lector en un aula, confirmen que `DEPURAR_UID` está coment
 
 ## 7. Lista de pruebas con el circuito
 
-Háganlas en orden. Las pruebas 3 a 8 necesitan el modo de depuración activado y, del lado del servidor, la ayuda de quien tenga el repositorio de la API instalado.
+Háganlas en orden. Las pruebas 3 a 8 necesitan el modo de depuración activado y, del lado del servidor, la ayuda de quien tenga el repositorio de la API instalado. Para conectar el ESP32 a la API de esa computadora (dirección, firewall, hotspot, vincular tarjetas y preparar una clase), sigan [prueba-con-dispositivo.md](prueba-con-dispositivo.md).
 
 | # | Prueba | Resultado esperado |
 |---|---|---|

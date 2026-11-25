@@ -1,0 +1,38 @@
+# Revisión de secretos (gitleaks) que corre el CI en cada PR y en cada push a
+# main. Si encuentra una contraseña, clave o dirección privada, el check falla.
+#
+# Usa todas las reglas de fábrica de gitleaks (claves de AWS, GitHub, Google,
+# llaves privadas, tokens…) y agrega estas, porque las de fábrica no detectan
+# una contraseña de Wi-Fi ni la dirección de un Apps Script.
+#
+# Para probarlo en tu computadora: gitleaks git --config .gitleaks.toml --redact -v .
+
+title = "TapList"
+
+[extend]
+useDefault = true
+
+# Archivos que guardan secretos y nunca deben subirse, aunque se fuercen a
+# pasar el .gitignore. Sus ejemplos (.env.example, secretos.ejemplo.h) sí se suben.
+[[rules]]
+id = "archivo-de-secretos"
+description = "Archivo de secretos subido al repositorio (secretos.h o .env)"
+path = '''(^|/)(secretos\.h|\.env)$'''
+
+# En el código del lector: una contraseña, clave, token o nombre de red escrito
+# como texto, en una variable o en un #define. Los valores van en secretos.h.
+[[rules]]
+id = "secreto-en-firmware"
+description = "Contraseña, clave o red Wi-Fi escrita en el código del lector; va en firmware/secretos.h"
+path = '''\.(ino|h|hpp|c|cpp)$'''
+regex = '''(?i)[a-z0-9_]*(?:pass(?:word|wd)?|contrase(?:n|ñ)a|clave|secret[oa]?|token|api_?key|ssid)[a-z0-9_]*["']?\s*(?:=|:|\s)\s*["']([^"']+)["']'''
+secretGroup = 1
+keywords = ["pass", "contrase", "clave", "secret", "token", "key", "ssid"]
+
+# La dirección de una implementación web de Apps Script deja escribir en la
+# hoja de cálculo a quien la conozca.
+[[rules]]
+id = "url-apps-script"
+description = "Dirección privada de una implementación web de Google Apps Script"
+regex = '''https://script\.google\.com/macros/s/[A-Za-z0-9_-]{20,}'''
+keywords = ["script.google.com"]

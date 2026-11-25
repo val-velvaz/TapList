@@ -2,7 +2,7 @@
 
 Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto, lo que falta y cómo debes trabajar en este repositorio. Léelo completo al empezar cada sesión.
 
-> **Estado actualizado al 22 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
+> **Estado actualizado al 25 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
 
 ---
 
@@ -93,7 +93,7 @@ El equipo entregó un documento con el modelo 4+1 que es la referencia del dise�
 - **PostgreSQL 18 local en Windows.** `psql` entra como `postgres` sin pedir contraseña (por `pgpass.conf` o por confianza local). Ahí el `.env` usa `PGUSER=postgres` con `PGPASSWORD` vacío.
 - **La carpeta de usuario de Windows es un repositorio de Git**, probablemente creado por accidente. Trabaja siempre dentro de la carpeta del proyecto, que tiene su propio `.git`. Nunca hagas commits en el repositorio de la carpeta de usuario.
 - **`curl` en Windows rompe los acentos** si el JSON va en la línea de comandos: «Núñez» llega como «N�ez». Para probar a mano con acentos, manda el cuerpo desde un archivo UTF-8 (`curl --data-binary @cuerpo.json`) o usa `Invoke-RestMethod`. No es un problema de la API.
-- **`main` está protegida** con un ruleset: exige los checks «Tipos, compilación y pruebas» y «Web: tipos, compilación y pruebas» y bloquea los *force push*. No exige aprobaciones, porque Valeria trabaja sola en el repositorio y GitHub no deja aprobar los propios PR.
+- **`main` está protegida** con un ruleset: exige los checks «Tipos, compilación y pruebas» y «Web: tipos, compilación y pruebas» y bloquea los *force push*. El tercer check, «Secretos: gitleaks», existe desde el PR de `ci/revision-secretos`; Valeria debe agregarlo al ruleset (si no lo ha hecho, recuérdaselo). No exige aprobaciones, porque Valeria trabaja sola en el repositorio y GitHub no deja aprobar los propios PR.
 - **Ya usaste Auto-fix** en algunos PR para atender fallas del CI y comentarios. CodeRabbit deja un comentario automático diciendo que no revisa el repositorio por tener pocas estrellas; ignóralo salvo que Valeria pida la revisión.
 
 ---
@@ -126,6 +126,8 @@ npm run db:setup -- --reset          # borra "taplist" y la recrea
 npm run dispositivo:clave -- <id>    # genera o rota la clave de un lector y la muestra una sola vez
 npm run simular:lectura -- <uid> [--leido-en <ISO>]   # simula el ESP32
 npm run uid:revisar -- <valor> [--comparar <otro>]    # revisa el formato de un UID y lo compara con otro
+npm run dev:clase-ahora [-- --minutos N]              # SOLO DESARROLLO: clase de prueba de D01 que empieza en N minutos
+npm run dev:vincular [-- <uid> --matricula <m>]       # SOLO DESARROLLO: vincula una tarjeta real a un estudiante de D01
 
 # La web, dentro de web/ (con la API corriendo en otra terminal):
 npm run dev                          # web en http://localhost:5173, con /api reenviado a la API
@@ -135,15 +137,19 @@ npm run typecheck && npm run build && npm test
 ### 3.3 Estructura
 
 ```
-.github/workflows/pruebas.yml   CI con dos trabajos: la API (PostgreSQL 18) y la web; cada uno hace npm ci, typecheck, build y test
+.github/workflows/pruebas.yml   CI con tres trabajos: la API (PostgreSQL 18), la web (npm ci, typecheck, build y test) y «Secretos: gitleaks»
+.gitleaks.toml                  reglas de gitleaks: las de fábrica más archivo-de-secretos, secreto-en-firmware y url-apps-script
+firmware/                       código del lector, del equipo: firmware.ino, secretos.ejemplo.h y LEEME.md (secretos.h está en .gitignore)
 db/migrations/001..004          esquema (orden alfabético)
 db/seeds/001_datos_prueba.sql   datos ficticios solo para desarrollo
 db/preparar-base.ts             crea la base, migra y carga la semilla
 docs/contrato-dispositivo.md    contrato de la API para el firmware del ESP32 (incluye el formato canónico del UID)
 docs/guia-firmware.md           guía para el equipo: capa del lector, conexiones y lista de pruebas
-scripts/                        db-setup, dispositivo-clave, simular-lectura, uid-revisar
+docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo (IP, firewall, hotspot)
+scripts/                        db-setup, dispositivo-clave, simular-lectura, uid-revisar, dev-clase-ahora, dev-vincular
 src/app.ts                      arma Express y monta las rutas (lo usan el servidor y las pruebas)
-src/server.ts                   punto de entrada; cierra las conexiones SSE al apagar
+src/server.ts                   punto de entrada; escucha en todas las interfaces y, en desarrollo, muestra las IP de red; cierra las conexiones SSE al apagar
+src/desarrollo/                 herramientas solo de desarrollo (clase de prueba, vincular tarjetas); excluidas de dist/
 src/config/env.ts               variables de entorno validadas con zod
 src/db/pool.ts                  pool de pg; cada sesión usa timezone = ZONA_HORARIA_ESCUELA
 src/db/transaccion.ts           conTransaccion(fn): BEGIN / COMMIT / ROLLBACK
@@ -155,7 +161,7 @@ src/modules/<módulo>/           <módulo>.routes / .controller / .service / .sc
   auth, lecturas (+ tiempo.ts), estudiantes, grupos, bitacora, dispositivos,
   asistencias (+ registros.ts: faltas y pendientes; tiempoReal.ts: SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
 src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion, busqueda
-tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas
+tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas, desarrollo
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 web/                            página web: Vite, React, TypeScript y React Router, con su propio package.json
   vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
@@ -265,7 +271,7 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **193 pruebas** en 9 archivos:
+Según el README, hay **206 pruebas** en 10 archivos:
 
 | Archivo | Pruebas |
 |---|---|
@@ -278,6 +284,7 @@ Según el README, hay **193 pruebas** en 9 archivos:
 | `orden.test.ts` | 10 |
 | `uid.test.ts` | 24 |
 | `faltas.test.ts` | 15 |
+| `desarrollo.test.ts` | 13 |
 
 Cómo están hechas:
 
@@ -293,7 +300,7 @@ Cómo están hechas:
 
 ---
 
-## 4. Estado del proyecto (al 22 de noviembre de 2026)
+## 4. Estado del proyecto (al 25 de noviembre de 2026)
 
 ### Historial de PR
 
@@ -311,9 +318,13 @@ Cómo están hechas:
 | #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Fusionado (`1076ce0`) |
 | #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Fusionado (`1b74aac`) |
 | #12 | `feat/estudiantes-en-grupo` | API para la entrega 3: `estudiantes_en_grupo` en P3, a la fecha final del periodo | Fusionado (`05dd375`) |
-| #13 | `feat/registro-nfc` | Primer código del firmware, de una compañera (`src/modules/NFC/…ino`); escribe en Google Sheets, no en la API | Abierto, sin revisar por Valeria |
+| #13 | `feat/registro-nfc` | Primer código del firmware, de una compañera; traía la contraseña de un Wi-Fi y la dirección de un Apps Script | **Cerrado sin fusionar** (25 de noviembre). Su código pasó al #16, sin los datos privados. La rama la borra Valeria |
 | #14 | `chore/prueba-dispositivo` | Prueba con el ESP32 real: `dev:clase-ahora`, `dev:vincular` y `docs/prueba-con-dispositivo.md` | Abierto |
 | #15 | `feat/web-estadisticas` | Web, entrega 3: P3 con tarjetas, gráfica semanal propia y exportación | Abierto |
+| #16 | `firmware/version-inicial` | El código del #13 en `firmware/`, sin cambiar su lógica, con los datos privados en `firmware/secretos.h` | Abierto |
+| #17 | `ci/revision-secretos` | Revisión de secretos con gitleaks en el CI | Abierto |
+
+Orden de fusión acordado el 25 de noviembre: **#17 → #14 → #15 → #16**. Las ramas están encadenadas (la del #14 incluye la del #17, y la del #15 incluye la del #14), así que en ese orden no hay conflictos.
 
 ### Avance aproximado
 
@@ -322,9 +333,9 @@ Cómo están hechas:
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
 | Web | 25 % | ≈ 60 %. Entregas 1 y 2 fusionadas; la 3 en el PR #15. |
-| Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Están el contrato y la guía, sin código. El circuito está en prototipo. |
+| Firmware del ESP32 y circuito | 15 % | ≈ 10 %. Hay una versión inicial (PR #16) que todavía no usa la API. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
-| **Total** | | **≈ 71 %** |
+| **Total** | | **≈ 72 %** |
 
 ---
 
@@ -387,9 +398,11 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 
 Lo hacen los compañeros de Valeria, que tienen poca experiencia con GitHub. **Tú no escribes código en `firmware/`.**
 
-- **Sus guías son `docs/contrato-dispositivo.md` y `docs/guia-firmware.md`.** Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
+- **Sus guías son `docs/contrato-dispositivo.md`, `docs/guia-firmware.md` y, para probar el ESP32 contra la computadora de Valeria, `docs/prueba-con-dispositivo.md`.** Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
 - **Lector previsto: RC522 (MFRC522), sin confirmar** (decisión del 15 de noviembre). Podría terminar siendo un PN532 u otro. **Cambiar de lector solo afecta a la capa del lector en el firmware** (una interfaz de dos funciones y una implementación por modelo, elegida con un `#define`): no toca el servidor, el contrato ni el resto del firmware.
-- **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta.
+- **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta. Desde el 25 de noviembre hay una versión inicial, `firmware/firmware.ino` (de una compañera, PR de `firmware/version-inicial`), que todavía envía las lecturas a Google Sheets y no a la API. **No cambies su lógica.**
+- **Datos privados del lector** (Wi-Fi, dirección del servidor, id y clave del dispositivo): van en `firmware/secretos.h`, que está en `.gitignore`; `firmware/secretos.ejemplo.h` tiene los mismos campos vacíos. Nunca escritos en `firmware.ino`.
+- **El PR #13 se cerró sin fusionar** (25 de noviembre) porque traía la contraseña de una red Wi-Fi y la dirección de un Apps Script en este repositorio público. Se pidió cambiar la contraseña. Su rama, `feat/registro-nfc`, la borra Valeria: esta sesión no tiene permiso para borrar ramas.
 - **Pendiente urgente:** que el equipo confirme el modelo del lector, compruebe que la credencial de la escuela es compatible (13.56 MHz, ISO 14443A) y pase la lista de pruebas de la guía. Si el UID no sale en el formato canónico, las credenciales se vinculan bien pero salen `RECHAZADA` en el aula; `npm run uid:revisar` sirve para encontrar la diferencia.
 - **La clave del dispositivo** va en NVS y nunca se imprime por el puerto serie.
 
@@ -461,7 +474,8 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 - **Transacciones:** toda operación que cambie varias tablas usa `conTransaccion`. Las acciones del Administrador se escriben en la bitácora **dentro de la misma transacción**.
 - **Concurrencia:** nunca un `SELECT` previo seguido de un `INSERT` para evitar duplicados. Usa restricciones `UNIQUE` con `ON CONFLICT` o atrapa el error `23505`, y `SELECT … FOR UPDATE` cuando dos operaciones tocan la misma fila.
 - **Zona horaria:** nunca uses la zona del servidor. Usa `ZONA_HORARIA_ESCUELA` y las funciones de `tiempo.ts`.
-- **Secretos:** nada en el código. Todo va en `.env`, documentado en `.env.example` y validado en `env.ts`. Las credenciales de la semilla son solo para desarrollo.
+- **Secretos:** nada en el código. Todo va en `.env`, documentado en `.env.example` y validado en `env.ts`; en el firmware, en `firmware/secretos.h`. Las credenciales de la semilla son solo para desarrollo.
+- **Revisión de secretos en el CI (gitleaks, desde el 25 de noviembre):** el check «Secretos: gitleaks» revisa todos los commits de la rama con `.gitleaks.toml` y falla si encuentra contraseñas, claves, un `secretos.h` o un `.env` subidos, o una dirección de Apps Script. Se agregó después de que el PR #13 subiera la contraseña de una red Wi-Fi y la dirección de un Apps Script. **Si falla:** no lo silencies ni agregues excepciones sin preguntarle a Valeria; quita el secreto y dile que hay que **cambiarlo**, porque ya quedó en el historial. Una excepción solo vale para un valor de desarrollo documentado (como las claves de la semilla), con su motivo en `.gitleaks.toml`.
 - **SQL directo con parámetros** (`$1`, `$2`…), nunca concatenando valores.
 - **Orden alfabético:** todo `ORDER BY` sobre un texto visible lleva `ORDEN_ES` (`src/db/orden.ts`) y termina con el id como desempate. Nunca dependas de la configuración regional de la base.
 
