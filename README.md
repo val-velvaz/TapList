@@ -184,7 +184,7 @@ npm test
 
 ### Integración continua (GitHub Actions)
 
-El workflow `.github/workflows/pruebas.yml` corre en **cada PR** y en **cada push a `main`**, con dos trabajos independientes:
+El workflow `.github/workflows/pruebas.yml` corre en **cada PR** y en **cada push a `main`**, con tres trabajos independientes:
 
 **«Tipos, compilación y pruebas»** (la API):
 
@@ -194,11 +194,13 @@ El workflow `.github/workflows/pruebas.yml` corre en **cada PR** y en **cada pus
 
 **«Web: tipos, compilación y pruebas»** (la carpeta `web/`): instala Node igual y corre los mismos cuatro pasos dentro de `web/`. No necesita la base de datos.
 
+**«Secretos: gitleaks»**: busca contraseñas, claves y direcciones privadas en todos los commits de la rama que se revisa, y falla si encuentra una. Ver [Revisión de secretos](#revisión-de-secretos).
+
 No usa `.env` ni secretos del repositorio:
 - La contraseña de PostgreSQL solo existe dentro del contenedor efímero de CI.
 - `vitest.config.ts` genera un `JWT_SECRET` aleatorio en cada corrida.
 
-El resultado aparece como un check en cada PR y en la insignia de arriba. Conviene proteger la rama `main` en GitHub para exigir que los checks **Tipos, compilación y pruebas** y **Web: tipos, compilación y pruebas** pasen antes de fusionar. Se configura en *Settings → Branches → Add branch ruleset → Require status checks to pass*.
+El resultado aparece como un check en cada PR y en la insignia de arriba. Conviene proteger la rama `main` en GitHub para exigir que los checks **Tipos, compilación y pruebas**, **Web: tipos, compilación y pruebas** y **Secretos: gitleaks** pasen antes de fusionar. Se configura en *Settings → Branches → Add branch ruleset → Require status checks to pass*.
 
 Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `tests/globalSetup.ts`:
 
@@ -207,6 +209,23 @@ Las pruebas usan Vitest y Supertest contra `PGDATABASE_TEST`. Antes de correr, `
 3. Agrega una cuenta inactiva.
 
 El `JWT_SECRET` de las pruebas se genera al azar en cada corrida.
+
+### Revisión de secretos
+
+El repositorio es público: una contraseña que se sube queda en el historial aunque después se borre. Por eso el CI corre [gitleaks](https://github.com/gitleaks/gitleaks) 8.21.2, con la configuración de `.gitleaks.toml`:
+
+| Regla | Qué detecta |
+|---|---|
+| Las de fábrica de gitleaks | Claves de servicios conocidos (AWS, GitHub, Google…), llaves privadas, tokens |
+| `archivo-de-secretos` | Un `secretos.h` o un `.env` subido al repositorio, aunque se haya forzado a pasar el `.gitignore` |
+| `secreto-en-firmware` | En el código del lector (`.ino`, `.h`, `.c`, `.cpp`), una contraseña, clave, token o red Wi-Fi escrita como texto. Esos valores van en `firmware/secretos.h` |
+| `url-apps-script` | La dirección privada de una implementación web de Google Apps Script, en cualquier archivo |
+
+- **Las reglas propias existen porque las de fábrica no detectaban** una contraseña de Wi-Fi ni la dirección de un Apps Script. Se probaron con el código que las tenía: las reglas de fábrica no encontraron nada; con las propias, las tres líneas.
+- **Qué se revisa:** todos los commits que llevan a la rama del PR, no solo el último, así que también se detecta un secreto que se agregó y se borró dentro del mismo PR. No revisa las demás ramas del repositorio.
+- **Los valores no salen en el registro del CI** (`--redact`), porque el registro también es público.
+- **Si el check falla:** quita el secreto del código y, sobre todo, **cámbialo** (la contraseña, la clave o la implementación del script), porque ya quedó en el historial de la rama.
+- **Para probarlo en tu computadora,** con gitleaks instalado: `gitleaks git --config .gitleaks.toml --redact -v --log-opts="HEAD" .`
 
 La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 206 pruebas en diez archivos:
 
@@ -1106,6 +1125,7 @@ db/
 docs/contrato-dispositivo.md contrato de la API para el firmware del ESP32
 docs/guia-firmware.md        guía del firmware: capa del lector, conexiones y pruebas
 docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo
+.gitleaks.toml               reglas de la revisión de secretos del CI
 scripts/
   db-setup.ts                npm run db:setup
   dispositivo-clave.ts       npm run dispositivo:clave
