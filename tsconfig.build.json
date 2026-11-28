@@ -4,5 +4,7 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Herramientas solo de desarrollo (las usan scripts/ con tsx): no van en dist/.
+  "exclude": ["src/desarrollo"]
 }
