@@ -5,3 +5,7 @@ coverage/
 .env.*
 !.env.example
 *.log
+
+# Datos privados del lector (Wi-Fi, servidor y clave del dispositivo).
+# Se copia de firmware/secretos.ejemplo.h y se llena en cada computadora.
+firmware/secretos.h
