@@ -12,29 +12,8 @@
  * corriendo (npm run dev).
  */
 import 'dotenv/config';
-
-const TIMEOUT_MS = 3000; // el mismo que se recomienda al firmware
-
-interface Senal {
-  icono: string;
-  descripcion: string;
-}
-
-const SENALES = {
-  verde: { icono: '🟢', descripcion: 'LED verde y 1 pitido corto' },
-  amarillo: { icono: '🟡', descripcion: 'LED amarillo y 2 pitidos cortos' },
-  rojo: { icono: '🔴', descripcion: 'LED rojo y 1 pitido largo' },
-  azul: { icono: '🔵', descripcion: '3 destellos azules, sin sonido (no guardada)' },
-} satisfies Record<string, Senal>;
-
-/** Misma tabla que docs/contrato-dispositivo.md. */
-function senalPara(status: number, cuerpo: { resultado?: string } | undefined): Senal {
-  if (status === 200 && cuerpo?.resultado === 'ASISTENCIA') return SENALES.verde;
-  if (status === 200 && cuerpo?.resultado === 'RETARDO') return SENALES.amarillo;
-  if (status === 200 && cuerpo?.resultado === 'RECHAZADA') return SENALES.rojo;
-  if (status === 400) return SENALES.rojo;
-  return SENALES.azul;
-}
+// Las señales y el tiempo máximo son los mismos que se piden al firmware.
+import { SENALES, senalPara, TIMEOUT_MS } from '../src/desarrollo/diagnosticoDispositivo.js';
 
 function uso(mensaje?: string): never {
   if (mensaje) console.error(`Error: ${mensaje}\n`);
