@@ -1,6 +1,7 @@
 # Corre la verificación de tipos, la compilación y todas las pruebas en cada
 # PR y en cada push a main: las de la API, contra un PostgreSQL de servicio, y
-# las de la página web (carpeta web/), en un trabajo aparte.
+# las de la página web (carpeta web/), en un trabajo aparte. Un tercer trabajo
+# busca contraseñas y claves con gitleaks.
 name: Pruebas
 
 on:
@@ -102,3 +103,31 @@ jobs:
 
       - name: Correr las pruebas
         run: npm test
+
+  # Falla si alguien sube contraseñas, claves o direcciones privadas
+  # (reglas en .gitleaks.toml). No necesita Node ni la base de datos.
+  secretos:
+    name: "Secretos: gitleaks"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Descargar el código con todo su historial
+        uses: actions/checkout@v4
+        with:
+          # El historial completo, para revisar también un secreto que se
+          # agregó en un commit y se borró en otro.
+          fetch-depth: 0
+
+      - name: Instalar gitleaks (versión fija, con suma de comprobación)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          echo "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba  gitleaks.tar.gz" | sha256sum --check -
+          tar -xzf gitleaks.tar.gz gitleaks
+
+      - name: Buscar contraseñas y claves en los commits de esta rama
+        # Solo los commits que llevan a lo que se revisa (HEAD), no las demás
+        # ramas del repositorio. --redact oculta los valores en el registro,
+        # porque el repositorio es público.
+        run: ./gitleaks git --config .gitleaks.toml --redact --verbose --exit-code 1 --log-opts="HEAD" .
+
