@@ -34,3 +34,23 @@ export function haceCuanto(desde: number, ahora: number = Date.now()): string {
   if (minutos < 60) return `hace ${minutos} min`;
   return `hace ${Math.floor(minutos / 60)} h`;
 }
+
+/** Día de la semana ISO de una fecha 'YYYY-MM-DD': 1 = lunes … 7 = domingo. */
+export function diaSemana(fecha: string): number {
+  const [a, m, d] = fecha.split('-').map(Number);
+  return new Date(Date.UTC(a!, m! - 1, d!)).getUTCDay() || 7;
+}
+
+/** El lunes de la semana de una fecha 'YYYY-MM-DD'. */
+export const lunesDe = (fecha: string): string => sumarDias(fecha, 1 - diaSemana(fecha));
+
+/** Días entre dos fechas 'YYYY-MM-DD' (hasta − desde). */
+export function diasEntre(desde: string, hasta: string): number {
+  return Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
+}
+
+/** 91.4 → '91.4 %', 72 → '72 %', null → '—'. */
+export function porcentaje(valor: number | null | undefined): string {
+  if (valor === null || valor === undefined) return '—';
+  return `${valor.toLocaleString('es-MX', { maximumFractionDigits: 1 })} %`;
+}

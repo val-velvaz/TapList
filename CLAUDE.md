@@ -2,7 +2,7 @@
 
 Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto, lo que falta y cómo debes trabajar en este repositorio. Léelo completo al empezar cada sesión.
 
-> **Estado actualizado al 22 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
+> **Estado actualizado al 25 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
 
 ---
 
@@ -167,12 +167,14 @@ web/                            página web: Vite, React, TypeScript y React Rou
   vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
   src/api/cliente.ts            pedir() y descargarArchivo(): única puerta hacia la API, con el manejo común de errores (ErrorApi)
   src/api/asistencias.ts        tipos y llamadas de P2
+  src/api/estadisticas.ts       tipos y llamadas de P3
   src/sesion/                   ContextoSesion (usuario, iniciarSesion, cerrarSesion) y rutas de inicio por rol
   src/componentes/              Marco (encabezado y menú por rol), RutaProtegida y Paginacion
   src/paginas/                  Login (P1), AvisoPrivacidad, SinPermiso, NoEncontrada, EnConstruccion
   src/paginas/asistencias/      Asistencias (P2) y useEnVivo (SSE)
+  src/paginas/estadisticas/     Estadisticas (P3) y GraficaSemanal (barras propias)
   src/utilidades/fechas.ts      fechas y horas para mostrar y para los filtros
-  src/pruebas/                  login, sesion, cliente y asistencias + ayudas.tsx (simularApi, montar,
+  src/pruebas/                  login, sesion, cliente, asistencias y estadisticas + ayudas.tsx (simularApi, montar,
                                 API_P2_VACIA) y eventSourceFalso.ts
 ```
 
@@ -294,11 +296,11 @@ Cómo están hechas:
 
 **Confirma el conteo con `npm test` al empezar.** Si no coincide, actualiza la tabla del README.
 
-**Pruebas de la web:** aparte, en `web/src/pruebas/`, hay **56 pruebas** en 4 archivos (`login` 14, `sesion` 11, `cliente` 8, `asistencias` 23). Toda pantalla que entre a `/asistencias` necesita las respuestas de P2 (usa `API_P2_VACIA`); el SSE se simula con `EventSourceFalso`, que `preparar.ts` instala antes de cada prueba. Se corren con `npm test` dentro de `web/`, no necesitan la API ni la base (sustituyen `fetch` con `simularApi`) y montan la aplicación completa con `montar(ruta)`.
+**Pruebas de la web:** aparte, en `web/src/pruebas/`, hay **78 pruebas** en 5 archivos (`login` 14, `sesion` 11, `cliente` 8, `asistencias` 23, `estadisticas` 22). Toda pantalla que entre a `/asistencias` necesita las respuestas de P2 (usa `API_P2_VACIA`); el SSE se simula con `EventSourceFalso`, que `preparar.ts` instala antes de cada prueba. Se corren con `npm test` dentro de `web/`, no necesitan la API ni la base (sustituyen `fetch` con `simularApi`) y montan la aplicación completa con `montar(ruta)`.
 
 ---
 
-## 4. Estado del proyecto (al 22 de noviembre de 2026)
+## 4. Estado del proyecto (al 25 de noviembre de 2026)
 
 ### Historial de PR
 
@@ -316,8 +318,13 @@ Cómo están hechas:
 | #10 | `feat/faltas-y-busqueda` | API para la entrega 2: faltas y pendientes en P2 con la misma regla que P3, y búsqueda `q` | Fusionado (`1076ce0`) |
 | #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Fusionado (`1b74aac`) |
 | #12 | `feat/estudiantes-en-grupo` | API para la entrega 3: `estudiantes_en_grupo` en P3, a la fecha final del periodo | Fusionado (`05dd375`) |
-| #13 | `feat/registro-nfc` | Primer código del firmware, de una compañera (`src/modules/NFC/…ino`); escribe en Google Sheets, no en la API | Abierto, sin revisar por Valeria |
+| #13 | `feat/registro-nfc` | Primer código del firmware, de una compañera; traía la contraseña de un Wi-Fi y la dirección de un Apps Script | **Cerrado sin fusionar** (25 de noviembre). Su código pasó al #16, sin los datos privados. La rama la borra Valeria |
 | #14 | `chore/prueba-dispositivo` | Prueba con el ESP32 real: `dev:clase-ahora`, `dev:vincular` y `docs/prueba-con-dispositivo.md` | Abierto |
+| #15 | `feat/web-estadisticas` | Web, entrega 3: P3 con tarjetas, gráfica semanal propia y exportación | Abierto |
+| #16 | `firmware/version-inicial` | El código del #13 en `firmware/`, sin cambiar su lógica, con los datos privados en `firmware/secretos.h` | Abierto |
+| #17 | `ci/revision-secretos` | Revisión de secretos con gitleaks en el CI | Abierto |
+
+Orden de fusión acordado el 25 de noviembre: **#17 → #14 → #15 → #16**. Las ramas están encadenadas (la del #14 incluye la del #17, y la del #15 incluye la del #14), así que en ese orden no hay conflictos.
 
 ### Avance aproximado
 
@@ -325,10 +332,10 @@ Cómo están hechas:
 |---|---|---|
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
-| Web | 25 % | ≈ 40 %. Entregas 1 y 2 de 5, fusionadas. |
-| Firmware del ESP32 y circuito | 15 % | ≈ 5 %. Están el contrato y la guía, sin código. El circuito está en prototipo. |
+| Web | 25 % | ≈ 60 %. Entregas 1 y 2 fusionadas; la 3 en el PR #15. |
+| Firmware del ESP32 y circuito | 15 % | ≈ 10 %. Hay una versión inicial (PR #16) que todavía no usa la API. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
-| **Total** | | **≈ 66 %** |
+| **Total** | | **≈ 72 %** |
 
 ---
 
@@ -360,7 +367,7 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
   - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
   - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
 - **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas», y ya está en el ruleset de `main` junto con el de la API.
-- **Estado de las entregas:** 1 y 2 fusionadas (P1 y P2). 3 (P3): la API fusionada (PR #12); falta la web. Las pantallas P3 a P5 existen como rutas con la página `EnConstruccion`.
+- **Estado de las entregas:** 1 y 2 fusionadas (P1 y P2). 3 (P3): la API fusionada (PR #12) y la web en el PR #15. Las pantallas P4 y P5 existen como rutas con la página `EnConstruccion`.
 - **Semilla:** los estudiantes están inscritos desde el 1 de agosto de 2026, así que una base recién creada ya muestra faltas. Para ver un «Pendiente» a mano hace falta una clase cuya ventana esté abierta en ese momento (por ejemplo, una clase de prueba insertada en la base de desarrollo) y una lectura con `simular:lectura`.
 
 - **Ubicación:**
