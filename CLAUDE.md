@@ -328,7 +328,7 @@ Cómo están hechas:
 | #15 | `feat/web-estadisticas` | Web, entrega 3: P3 con tarjetas, gráfica semanal propia y exportación | Fusionado el 28 de noviembre (`a1688b4`) |
 | #16 | `firmware/version-inicial` | El código del #13 en `firmware/`, sin cambiar su lógica, con los datos privados en `firmware/secretos.h` | Fusionado el 28 de noviembre (`2098f67`) |
 | #17 | `ci/revision-secretos` | Revisión de secretos con gitleaks en el CI | Fusionado el 28 de noviembre (`a2fe9a8`) |
-| — | `docs/preparacion-entrega` | Revisión del firmware, `dispositivo:diagnostico`, lista de 10 minutos, cambios al modelo con diagrama y decisiones pendientes | Abierto, **no fusionar sin que Valeria lo pida** |
+| #18 | `docs/preparacion-entrega` | Revisión del firmware, `dispositivo:diagnostico`, lista de 10 minutos, cambios al modelo con diagrama y decisiones pendientes | Abierto, **no fusionar sin que Valeria lo pida** |
 
 Los cuatro (#17, #14, #15 y #16) se fusionaron el 28 de noviembre en ese orden, con merge commit. Después se revisó `main` con gitleaks: la contraseña del #13 **no llegó** a `main` ni a otra rama; solo está en `feat/registro-nfc` (y en el PR #13 cerrado, que GitHub conserva). Se le pidió a la compañera cambiar la contraseña del router.
 
