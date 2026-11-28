@@ -2,7 +2,7 @@
 
 Este archivo es para Claude Code. Explica qué es TapList, cómo va el proyecto, lo que falta y cómo debes trabajar en este repositorio. Léelo completo al empezar cada sesión.
 
-> **Estado actualizado al 25 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
+> **Estado actualizado al 28 de noviembre de 2026.** La sección 4 describe un momento concreto. Antes de actuar, confírmala contra el repositorio (`git log`, `gh pr list`) y actualízala cuando algo cambie.
 
 ---
 
@@ -124,6 +124,7 @@ npm test                             # todas las pruebas (recrean taplist_test s
 npm run db:setup                     # crea "taplist", migra y carga la semilla
 npm run db:setup -- --reset          # borra "taplist" y la recrea
 npm run dispositivo:clave -- <id>    # genera o rota la clave de un lector y la muestra una sola vez
+npm run dispositivo:diagnostico [-- <uid>] [--real] [--url <dir>] [--id <id>]   # revisa red, clave, UID y clase como el ESP32; sin --real no registra nada
 npm run simular:lectura -- <uid> [--leido-en <ISO>]   # simula el ESP32
 npm run uid:revisar -- <valor> [--comparar <otro>]    # revisa el formato de un UID y lo compara con otro
 npm run dev:clase-ahora [-- --minutos N]              # SOLO DESARROLLO: clase de prueba de D01 que empieza en N minutos
@@ -145,11 +146,14 @@ db/seeds/001_datos_prueba.sql   datos ficticios solo para desarrollo
 db/preparar-base.ts             crea la base, migra y carga la semilla
 docs/contrato-dispositivo.md    contrato de la API para el firmware del ESP32 (incluye el formato canónico del UID)
 docs/guia-firmware.md           guía para el equipo: capa del lector, conexiones y lista de pruebas
-docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo (IP, firewall, hotspot)
-scripts/                        db-setup, dispositivo-clave, simular-lectura, uid-revisar, dev-clase-ahora, dev-vincular
+docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo (lista de 10 minutos, IP, firewall, hotspot)
+docs/revision-firmware.md       qué le falta a firmware/firmware.ino para hablar con la API, con líneas y correcciones sugeridas
+docs/cambios-al-modelo.md       los tres cambios al modelo ER, con el diagrama Mermaid generado de las migraciones
+docs/decisiones-pendientes.md   UC-02, recuperación de contraseña y aviso de privacidad: opciones, costo y recomendación
+scripts/                        db-setup, dispositivo-clave, dispositivo-diagnostico, simular-lectura, uid-revisar, dev-clase-ahora, dev-vincular
 src/app.ts                      arma Express y monta las rutas (lo usan el servidor y las pruebas)
 src/server.ts                   punto de entrada; escucha en todas las interfaces y, en desarrollo, muestra las IP de red; cierra las conexiones SSE al apagar
-src/desarrollo/                 herramientas solo de desarrollo (clase de prueba, vincular tarjetas); excluidas de dist/
+src/desarrollo/                 herramientas solo de desarrollo (clase de prueba, vincular tarjetas, diagnóstico del lector y tabla de señales); excluidas de dist/
 src/config/env.ts               variables de entorno validadas con zod
 src/db/pool.ts                  pool de pg; cada sesión usa timezone = ZONA_HORARIA_ESCUELA
 src/db/transaccion.ts           conTransaccion(fn): BEGIN / COMMIT / ROLLBACK
@@ -161,7 +165,7 @@ src/modules/<módulo>/           <módulo>.routes / .controller / .service / .sc
   auth, lecturas (+ tiempo.ts), estudiantes, grupos, bitacora, dispositivos,
   asistencias (+ registros.ts: faltas y pendientes; tiempoReal.ts: SSE), estadisticas, exportacion (+ pdf.ts, xlsx.ts)
 src/utils/                      HttpError, contrasena, sesion, uid, erroresPg, validacion, busqueda
-tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas, desarrollo
+tests/                          auth, tiempo, lecturas, estudiantes, asistencias, estadisticas, orden, uid, faltas, desarrollo, diagnostico
                                 + datos.ts (credenciales de prueba) y globalSetup.ts
 web/                            página web: Vite, React, TypeScript y React Router, con su propio package.json
   vite.config.ts                proxy de /api hacia la API en desarrollo y configuración de Vitest
@@ -271,7 +275,7 @@ Toda variable nueva va en `.env.example` **y** en `src/config/env.ts`.
 
 ### 3.7 Pruebas
 
-Según el README, hay **206 pruebas** en 10 archivos:
+Según el README, hay **240 pruebas** en 11 archivos:
 
 | Archivo | Pruebas |
 |---|---|
@@ -285,6 +289,7 @@ Según el README, hay **206 pruebas** en 10 archivos:
 | `uid.test.ts` | 24 |
 | `faltas.test.ts` | 15 |
 | `desarrollo.test.ts` | 13 |
+| `diagnostico.test.ts` | 34 |
 
 Cómo están hechas:
 
@@ -300,7 +305,7 @@ Cómo están hechas:
 
 ---
 
-## 4. Estado del proyecto (al 25 de noviembre de 2026)
+## 4. Estado del proyecto (al 28 de noviembre de 2026)
 
 ### Historial de PR
 
@@ -319,12 +324,13 @@ Cómo están hechas:
 | #11 | `feat/web-asistencias` | Web, entrega 2: P2 con filtros, en vivo, refresco de pendientes y exportación; semilla inscrita desde el inicio del ciclo | Fusionado (`1b74aac`) |
 | #12 | `feat/estudiantes-en-grupo` | API para la entrega 3: `estudiantes_en_grupo` en P3, a la fecha final del periodo | Fusionado (`05dd375`) |
 | #13 | `feat/registro-nfc` | Primer código del firmware, de una compañera; traía la contraseña de un Wi-Fi y la dirección de un Apps Script | **Cerrado sin fusionar** (25 de noviembre). Su código pasó al #16, sin los datos privados. La rama la borra Valeria |
-| #14 | `chore/prueba-dispositivo` | Prueba con el ESP32 real: `dev:clase-ahora`, `dev:vincular` y `docs/prueba-con-dispositivo.md` | Abierto |
-| #15 | `feat/web-estadisticas` | Web, entrega 3: P3 con tarjetas, gráfica semanal propia y exportación | Abierto |
-| #16 | `firmware/version-inicial` | El código del #13 en `firmware/`, sin cambiar su lógica, con los datos privados en `firmware/secretos.h` | Abierto |
-| #17 | `ci/revision-secretos` | Revisión de secretos con gitleaks en el CI | Abierto |
+| #14 | `chore/prueba-dispositivo` | Prueba con el ESP32 real: `dev:clase-ahora`, `dev:vincular` y `docs/prueba-con-dispositivo.md` | Fusionado el 28 de noviembre (`f8d11a7`) |
+| #15 | `feat/web-estadisticas` | Web, entrega 3: P3 con tarjetas, gráfica semanal propia y exportación | Fusionado el 28 de noviembre (`a1688b4`) |
+| #16 | `firmware/version-inicial` | El código del #13 en `firmware/`, sin cambiar su lógica, con los datos privados en `firmware/secretos.h` | Fusionado el 28 de noviembre (`2098f67`) |
+| #17 | `ci/revision-secretos` | Revisión de secretos con gitleaks en el CI | Fusionado el 28 de noviembre (`a2fe9a8`) |
+| #18 | `docs/preparacion-entrega` | Revisión del firmware, `dispositivo:diagnostico`, lista de 10 minutos, cambios al modelo con diagrama y decisiones pendientes | Abierto, **no fusionar sin que Valeria lo pida** |
 
-Orden de fusión acordado el 25 de noviembre: **#17 → #14 → #15 → #16**. Las ramas están encadenadas (la del #14 incluye la del #17, y la del #15 incluye la del #14), así que en ese orden no hay conflictos.
+Los cuatro (#17, #14, #15 y #16) se fusionaron el 28 de noviembre en ese orden, con merge commit. Después se revisó `main` con gitleaks: la contraseña del #13 **no llegó** a `main` ni a otra rama; solo está en `feat/registro-nfc` (y en el PR #13 cerrado, que GitHub conserva). Se le pidió a la compañera cambiar la contraseña del router.
 
 ### Avance aproximado
 
@@ -332,10 +338,10 @@ Orden de fusión acordado el 25 de noviembre: **#17 → #14 → #15 → #16**. L
 |---|---|---|
 | Análisis y diseño | 15 % | 100 % |
 | Backend | 40 % | 100 % (quedan los pendientes menores de la sección 5) |
-| Web | 25 % | ≈ 60 %. Entregas 1 y 2 fusionadas; la 3 en el PR #15. |
-| Firmware del ESP32 y circuito | 15 % | ≈ 10 %. Hay una versión inicial (PR #16) que todavía no usa la API. El circuito está en prototipo. |
+| Web | 25 % | ≈ 70 %. Entregas 1, 2 y 3 fusionadas (P1, P2 y P3). Faltan P4, P5 y producción. |
+| Firmware del ESP32 y circuito | 15 % | ≈ 15 %. La versión inicial está en `main`, pero todavía envía a Google Sheets: `docs/revision-firmware.md` dice qué le falta. El circuito está en prototipo. |
 | Puesta en marcha | 5 % | 0 % |
-| **Total** | | **≈ 72 %** |
+| **Total** | | **≈ 75 %** |
 
 ---
 
@@ -359,7 +365,7 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 - **Referencia visual:** los bocetos de la Actividad 11 (P1 a P5), que Valeria compartió en PDF. La web debe ser lo más fiel posible a ellos; los colores y las medidas ya están como variables en `web/src/estilos.css`. El PDF no está en el repositorio: si no lo tienes en la sesión, pídeselo.
 - **Diferencias entre los bocetos y la API.** En el plan de la entrega que toque cada una, **propón si conviene agregarla a la API o ajustar la pantalla, con ventajas y desventajas**, y espera la decisión:
   - Entrega 2 (P2): **decidido (opción A en las dos):** la API agrega las filas de «Falta» y «Pendiente» y la búsqueda `q` por nombre o matrícula (PR #10). La web de P2 va en un PR aparte, después de fusionar el #10, y su plan corto se presenta antes.
-  - Entrega 3 (P3): **decidido el 21 de noviembre:**
+  - Entrega 3 (P3, fusionada en el PR #15): **decidido el 21 de noviembre:**
     - La tarjeta «Estudiantes en el grupo» sale de la API (`estudiantes_en_grupo`, PR #12): inscritos en la fecha «Hasta» del periodo, no hoy.
     - La gráfica por semana se dibuja con barras propias (sin Recharts). Una semana sin sesiones se muestra como «sin clases», **nunca como 0 %**, y cada porcentaje se puede leer sin el mouse (visible o accesible para lectores de pantalla).
     - El periodo inicial son las últimas 6 semanas.
@@ -367,7 +373,7 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
   - Entrega 4 (P4): la pestaña «Asistencias» del Administrador, cuando la consulta es solo para Docentes. Por ahora el menú del Administrador solo tiene «Estudiantes».
   - Ya decidida (P1): «¿Olvidaste tu contraseña?» muestra «contacta al administrador», sin funcionalidad. La recuperación real queda como pendiente.
 - **Check del CI:** la web tiene su propio trabajo, «Web: tipos, compilación y pruebas», y ya está en el ruleset de `main` junto con el de la API.
-- **Estado de las entregas:** 1 y 2 fusionadas (P1 y P2). 3 (P3): la API fusionada (PR #12) y la web en el PR #15. Las pantallas P4 y P5 existen como rutas con la página `EnConstruccion`.
+- **Estado de las entregas:** 1, 2 y 3 fusionadas (P1, P2 y P3). Las pantallas P4 y P5 existen como rutas con la página `EnConstruccion`. El tamaño del archivo de la web (más de 500 KB) se atiende en la entrega 5 (decidido el 28 de noviembre).
 - **Semilla:** los estudiantes están inscritos desde el 1 de agosto de 2026, así que una base recién creada ya muestra faltas. Para ver un «Pendiente» a mano hace falta una clase cuya ventana esté abierta en ese momento (por ejemplo, una clase de prueba insertada en la base de desarrollo) y una lectura con `simular:lectura`.
 
 - **Ubicación:**
@@ -398,17 +404,19 @@ La haces tú. El plan general ya está aprobado (15 de noviembre): carpeta `web/
 
 Lo hacen los compañeros de Valeria, que tienen poca experiencia con GitHub. **Tú no escribes código en `firmware/`.**
 
-- **Sus guías son `docs/contrato-dispositivo.md`, `docs/guia-firmware.md` y, para probar el ESP32 contra la computadora de Valeria, `docs/prueba-con-dispositivo.md`.** Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
+- **Sus guías son `docs/contrato-dispositivo.md`, `docs/guia-firmware.md` y, para probar el ESP32 contra la computadora de Valeria, `docs/prueba-con-dispositivo.md`** (que empieza con una lista de 10 minutos para el día de la prueba). Si cambias el contrato, actualiza esos documentos y avísale a Valeria.
+- **`docs/revision-firmware.md`** compara `firmware/firmware.ino` con el contrato, línea por línea: envía a Google Sheets con `GET`, no manda el id ni la clave, decide el retardo con `millis()`, valida con una lista local, muestra la señal antes de enviar e imprime el UID completo. Trae las correcciones sugeridas; **las hace el equipo**. Si el firmware cambia, revisa que el documento siga vigente.
+- **`npm run dispositivo:diagnostico`** revisa, desde la computadora, la dirección, el id y la clave que van en `secretos.h`. Sin `--real` no registra nada (envía la petición sin UID; la API revisa la clave antes que el cuerpo y responde `400`); con `--real` envía la petición completa. **No hay ni debe haber un modo de prueba en la API** (decidido el 28 de noviembre).
 - **Lector previsto: RC522 (MFRC522), sin confirmar** (decisión del 15 de noviembre). Podría terminar siendo un PN532 u otro. **Cambiar de lector solo afecta a la capa del lector en el firmware** (una interfaz de dos funciones y una implementación por modelo, elegida con un `#define`): no toca el servidor, el contrato ni el resto del firmware.
-- **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta. Desde el 25 de noviembre hay una versión inicial, `firmware/firmware.ino` (de una compañera, PR de `firmware/version-inicial`), que todavía envía las lecturas a Google Sheets y no a la API. **No cambies su lógica.**
+- **El código va en `firmware/`** (Arduino IDE o PlatformIO). Valeria lo subirá por él si hace falta. Desde el 28 de noviembre está en `main` una versión inicial, `firmware/firmware.ino` (de una compañera, PR #16), que todavía envía las lecturas a Google Sheets y no a la API. **No cambies su lógica.**
 - **Datos privados del lector** (Wi-Fi, dirección del servidor, id y clave del dispositivo): van en `firmware/secretos.h`, que está en `.gitignore`; `firmware/secretos.ejemplo.h` tiene los mismos campos vacíos. Nunca escritos en `firmware.ino`.
-- **El PR #13 se cerró sin fusionar** (25 de noviembre) porque traía la contraseña de una red Wi-Fi y la dirección de un Apps Script en este repositorio público. Se pidió cambiar la contraseña. Su rama, `feat/registro-nfc`, la borra Valeria: esta sesión no tiene permiso para borrar ramas.
+- **El PR #13 se cerró sin fusionar** (25 de noviembre) porque traía la contraseña de una red Wi-Fi y la dirección de un Apps Script en este repositorio público. Tiene un comentario que dice que lo reemplaza el #16. Se pidió cambiar la contraseña. Su rama, `feat/registro-nfc`, la borra Valeria: esta sesión no tiene permiso para borrar ramas (GitHub responde `403`).
 - **Pendiente urgente:** que el equipo confirme el modelo del lector, compruebe que la credencial de la escuela es compatible (13.56 MHz, ISO 14443A) y pase la lista de pruebas de la guía. Si el UID no sale en el formato canónico, las credenciales se vinculan bien pero salen `RECHAZADA` en el aula; `npm run uid:revisar` sirve para encontrar la diferencia.
 - **La clave del dispositivo** va en NVS y nunca se imprime por el puerto serie.
 
 ### Paso 4. Actualizar la documentación académica
 
-Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y al documento Word del modelado. Esto se hace **fuera del repositorio**: Valeria lo pidió en otra conversación. Si te pregunta, recuérdale que está pendiente.
+Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y al documento Word del modelado. Esto se hace **fuera del repositorio**: Valeria lo pidió en otra conversación. Si te pregunta, recuérdale que está pendiente. **`docs/cambios-al-modelo.md`** los explica (qué, por qué y con qué migración) y trae el diagrama completo en Mermaid, generado de las migraciones y comprobado contra la base; si agregas una migración que cambie el modelo, actualízalo.
 
 ### Paso 5. Puesta en marcha (cuando la web y el lector funcionen)
 
@@ -435,7 +443,7 @@ Los tres cambios de la sección 3.4 deben pasar al diagrama entidad-relación y 
 
 ## 6. Decisiones pendientes del equipo
 
-**No las tomes tú. Pregúntale a Valeria.**
+**No las tomes tú. Pregúntale a Valeria.** Las opciones, el costo y una recomendación de las tres primeras (UC-02, recuperación de contraseña y aviso de privacidad) están en `docs/decisiones-pendientes.md`. Ahí también se señala que el aviso cita la LFPDPPP, que es para particulares, y que a la universidad podría aplicarle la ley de sujetos obligados: **está por confirmar**, no lo des por hecho.
 
 1. **Acceso de estudiantes (UC-02).** El equipo lo consultará con la profesora; **mientras tanto, la web solo tiene Docente y Administrador.** El caso de uso existe, pero el modelo entidad-relación, los diagramas de actividades y el código solo tienen Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Si se aprueba, cambia el modelo de datos y la web. **Conviene decidirlo antes de avanzar la web.**
 2. **Ubicación y stack de la web** (paso 2). **Decidido el 15 de noviembre:** carpeta `web/` en este repositorio, con Vite, React y TypeScript; Express sirve la web en producción.

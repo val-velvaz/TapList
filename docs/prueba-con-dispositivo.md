@@ -16,6 +16,72 @@ Esta guía es para probar el lector real (ESP32 con lector NFC, LED y buzzer) co
 | 5 | Valeria | Prepara una clase que empieza en 5 minutos |
 | 6 | Compañera | Pasa las tarjetas y compara el color con la tabla |
 
+> **Antes de la prueba:** la versión inicial de `firmware/firmware.ino` todavía envía las lecturas a Google Sheets. Para que hable con la API necesita los cambios de [`revision-firmware.md`](revision-firmware.md) (sección «Qué cambiar para la primera prueba»).
+
+## El día de la prueba: lista de 10 minutos
+
+Para tenerla abierta en la mesa. Cada paso remite a la sección con el detalle.
+
+**Valeria, en su computadora (minutos 0 a 5):**
+
+1. **Abre la API** en la carpeta del proyecto: `npm run dev` (en Parrot OS, antes `nvm use`). Anota la línea «Desde otro equipo de esta red: http://…:3000». Si no sale o salen varias, busca la IP con `ipconfig` (Windows: la «IPv4-Adresse» del adaptador Wi-Fi) o `ip -4 addr show` (Parrot OS: el `inet` de `wlan0`). [Sección 1]
+2. **Firewall** (solo la primera vez en esa red). En Windows, PowerShell **como administrador**: [Sección 2]
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "TapList API (desarrollo)" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow -Profile Private
+   ```
+
+   En Parrot OS, si `sudo ufw status` dice `active`: `sudo ufw allow 3000/tcp`.
+3. **Revisa los datos que van en el lector**, en otra terminal, con la IP del paso 1:
+
+   ```bash
+   npm run dispositivo:diagnostico -- --url http://<IP>:3000
+   ```
+
+   Debe terminar en «✅ Todo bien» y mostrar la línea «En secretos.h: …». No registra ninguna asistencia.
+4. **Prueba desde el celular** (misma red Wi-Fi): abre `http://<IP>:3000/api/auth/me`. Si sale `{"error":"No autenticado"}`, la red y el firewall están bien. Si no carga, usa el hotspot del celular en 2.4 GHz y vuelve al paso 1 (la IP cambia). [Secciones 2 y 3]
+5. **Prepara la clase:** `npm run dev:clase-ahora -- --minutos 0`. Anota hasta qué hora da verde y desde cuándo amarillo. [Sección 6]
+6. **Abre la web** en `http://localhost:5173` (en `web/`, `npm run dev`) y entra como Roberto (`roberto.gomez@academicos.udg.mx`). Deja abierta la pantalla de Asistencias con «En vivo».
+
+**La compañera del firmware, en el ESP32 (minutos 5 a 7):**
+
+7. **Llena `firmware/secretos.h`** (copia de `secretos.ejemplo.h`; nunca se sube a GitHub): [Sección 4]
+
+   ```cpp
+   #define SECRETO_WIFI_SSID         "<la misma red que la computadora, 2.4 GHz>"
+   #define SECRETO_WIFI_PASS         "<su contraseña>"
+   #define SECRETO_URL_SERVIDOR      "http://<IP>:3000/api/dispositivo/lecturas"
+   #define SECRETO_DISPOSITIVO_ID    "1"
+   #define SECRETO_DISPOSITIVO_CLAVE "dev-esp32-aula101-SoloDesarrollo-2026"
+   ```
+
+   Es `http://`, no `https://`. La clave es la de prueba de la semilla.
+8. **Sube el firmware y abre el monitor serie** (115200 baudios). Al encender debe verse algo como «WiFi conectado. IP: 192.168.…» y el LED azul con un pitido corto. Si dice «No se pudo conectar al WiFi», revisa el nombre, la contraseña y que la red sea de 2.4 GHz.
+
+**Las dos (minutos 7 a 10):**
+
+9. **Vincula una tarjeta:** con `DEPURAR_UID` activado, acerca la tarjeta y copia el UID del monitor serie. En la computadora: `npm run dev:vincular -- <UID> --matricula 220000001`. [Sección 5]
+10. **Pasa la tarjeta.** Qué debe pasar:
+
+    | En el lector | En el monitor serie | En la web (P2), en menos de 5 s |
+    |---|---|---|
+    | 🟢 Verde y 1 pitido corto | Respuesta `200` | Andrea aparece como «Asistencia» |
+    | Otra vez la misma tarjeta: 🟢 verde | `200` (con `duplicado: true`) | No aparece otra fila |
+    | Una tarjeta sin vincular: 🔴 rojo y pitido largo | `200` (`RECHAZADA`) | Nada |
+
+**Si sale otro color:**
+
+| Ves | Qué significa | Qué hacer |
+|---|---|---|
+| 🔵 3 destellos azules con todas las tarjetas | La petición no llega o la clave no sirve | Corre en la computadora `npm run dispositivo:diagnostico -- --url http://<IP>:3000`: dice si es la red, la clave o la API. Revisa que `secretos.h` tenga exactamente la dirección y la clave que dio por buenas. Si el diagnóstico está bien pero el ESP32 no, es la red del ESP32 (otra red o 5 GHz) o el firewall: repite el paso 4 con el celular. |
+| 🔵 azul y el monitor serie dice `401` | Id o clave mal escritos | Copia la clave tal cual (sin espacios). |
+| 🔵 azul y el monitor serie dice `-1`, `-11` u otro número negativo | Sin respuesta en 3 s | IP equivocada, firewall o red distinta. |
+| 🔴 rojo con una tarjeta vinculada | Fuera de horario o el UID llegó en otro formato | Corre `npm run dispositivo:diagnostico -- <UID del monitor> --real`: dice si es la **clase** (vuelve a correr `dev:clase-ahora -- --minutos 0`), la **credencial** (vuelve a vincular) o el **formato** del UID. |
+| 🔴 rojo con pitido largo **sin** respuesta en el monitor | El lector no alcanzó a leer la tarjeta | Acércala de nuevo, más despacio. |
+| 🟢 verde y luego 🔵 azul | El firmware todavía muestra la señal antes de enviar | Es el punto 3 de [`revision-firmware.md`](revision-firmware.md). |
+
+Al terminar, sigue la sección 10.
+
 ## 1. Levantar la API en la computadora de Valeria
 
 En la carpeta del proyecto, con la base de desarrollo ya creada (`npm run db:setup`):
@@ -92,6 +158,14 @@ Si dice `inactive` o que `ufw` no existe, no hace falta nada.
 
 ### Comprobar que se llega desde otro equipo
 
+Primero, en la misma computadora, revisa la dirección, el id y la clave que irán en el ESP32 (no registra ninguna asistencia):
+
+```bash
+npm run dispositivo:diagnostico -- --url http://192.168.1.34:3000
+```
+
+Dice en lenguaje claro si falla la red, la clave o la API. **Pero desde la misma computadora no se pasa por su firewall**, así que falta la prueba desde otro equipo:
+
 Antes de tocar el ESP32, abre la dirección del paso 1 con `/api/auth/me` al final en el navegador de un **celular conectado a la misma red Wi-Fi**. Por ejemplo, `http://192.168.1.34:3000/api/auth/me`.
 
 - Si sale un texto como `{"error":"No autenticado"}`, **la red y el firewall están bien**: el ESP32 también podrá llegar.
@@ -116,14 +190,14 @@ Las pruebas usan pocos datos móviles: cada lectura es una petición pequeña de
 | Dato | Valor para esta prueba |
 |---|---|
 | Red Wi-Fi | La misma que la computadora de Valeria (2.4 GHz) |
-| URL | `http://<dirección del paso 1>/api/dispositivo/lecturas`, por ejemplo `http://192.168.1.34:3000/api/dispositivo/lecturas` |
-| `X-Dispositivo-Id` | `1` |
-| `X-Dispositivo-Clave` | `dev-esp32-aula101-SoloDesarrollo-2026` |
+| URL (`SECRETO_URL_SERVIDOR`) | `http://<dirección del paso 1>/api/dispositivo/lecturas`, por ejemplo `http://192.168.1.34:3000/api/dispositivo/lecturas` |
+| `X-Dispositivo-Id` (`SECRETO_DISPOSITIVO_ID` en `secretos.h`) | `1` |
+| `X-Dispositivo-Clave` (`SECRETO_DISPOSITIVO_CLAVE`) | `dev-esp32-aula101-SoloDesarrollo-2026` |
 | `Content-Type` | `application/json` |
 | Cuerpo | `{ "uid": "04A1B2C3" }`, con el UID en el [formato canónico](contrato-dispositivo.md#formato-canónico-del-uid) |
 
 - **Es `http://`, no `https://`.** En esta prueba la API no tiene certificado. En producción siempre será HTTPS, con otra dirección y otra clave.
-- **La clave es de prueba:** solo existe en la semilla. Guárdala en NVS igual que la real y no la imprimas por el puerto serie.
+- **La clave es de prueba:** solo existe en la semilla. Para esta prueba basta con `secretos.h` (que nunca se sube a GitHub); en la versión final va en NVS. Nunca la imprimas por el puerto serie.
 - **Hora:** para las lecturas guardadas sin conexión (`leido_en`), el ESP32 necesita la hora por NTP, y el hotspot o la red deben tener internet.
 
 ## 5. Vincular las tarjetas reales
@@ -216,10 +290,10 @@ Si se pasa alguno, la API responde `429` y el lector muestra los destellos azule
 
 | Síntoma | Causa probable | Qué hacer |
 |---|---|---|
-| Destellos azules con todas las tarjetas | El ESP32 no llega a la API | Comprueba con el celular (sección 2); revisa la dirección, el firewall y la red |
+| Destellos azules con todas las tarjetas | El ESP32 no llega a la API | `npm run dispositivo:diagnostico -- --url http://<IP>:3000`; luego comprueba con el celular (sección 2); revisa la dirección, el firewall y la red |
 | El celular llega, pero el ESP32 no | El ESP32 está en otra red, o en 5 GHz | Misma red y 2.4 GHz |
 | Destellos azules y el ESP32 recibe `401` | Clave o id del dispositivo mal escritos | Copia la clave de la tabla de la sección 4 |
-| Rojo con una tarjeta que sí se vinculó | UID con otro formato, o fuera de horario | Activa `DEPURAR_UID` y compara con `npm run uid:revisar -- <del ESP32> --comparar <el vinculado>`; corre `npm run dev:clase-ahora` |
+| Rojo con una tarjeta que sí se vinculó | UID con otro formato, o fuera de horario | `npm run dispositivo:diagnostico -- <UID> --real` dice cuál de las dos es. Activa `DEPURAR_UID` y compara con `npm run uid:revisar -- <del ESP32> --comparar <el vinculado>`; corre `npm run dev:clase-ahora` |
 | Funcionaba y dejó de funcionar | La dirección cambió (otra red, o el router asignó otra) | Revisa la dirección con el paso 1 |
 
 ## 10. Al terminar

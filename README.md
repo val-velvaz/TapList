@@ -13,9 +13,9 @@ Hasta ahora incluye:
 - La **consulta de asistencias** para el Docente (P2, AD-04): lista paginada de sus clases con asistencias, retardos, faltas y pendientes, filtros (incluida la búsqueda de estudiante por nombre o matrícula) y aviso en tiempo real con SSE.
 - Las **estadísticas y la exportación** para el Docente (P3, AD-05, RF-16 y RF-06): porcentaje de asistencia, retardos y faltas por grupo, clase y periodo, asistencia por semana, estudiantes con más faltas, y exportación a PDF y XLSX.
 
-- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado, las rutas por rol la consulta de asistencias del Docente (P2) con aviso en vivo y exportación, y sus estadísticas (P3) con gráfica por semana. Ver [Página web](#página-web).
+- La **página web** (carpeta `web/`), en construcción: ya tiene el inicio de sesión (P1), el encabezado, las rutas por rol, la consulta de asistencias del Docente (P2) con aviso en vivo y exportación, y sus estadísticas (P3) con gráfica por semana. Ver [Página web](#página-web).
 
-Faltan las pantallas P4 y P5 de la web y el firmware del lector, que programa el equipo.
+Faltan las pantallas P4 y P5 de la web y el firmware del lector, que programa el equipo. La versión inicial del firmware (`firmware/firmware.ino`) todavía no habla con la API: [`docs/revision-firmware.md`](docs/revision-firmware.md) explica qué le falta.
 
 ## Contenido
 
@@ -89,7 +89,7 @@ cp .env.example .env
 | `SSE_LATIDO_SEGUNDOS` | Cada cuánto el flujo SSE envía un latido y revisa que la sesión siga vigente (por defecto, 25). |
 | `SSE_MAX_CONEXIONES_DOCENTE` | Conexiones SSE simultáneas por docente, una por pestaña (por defecto, 5); la siguiente recibe `429`. |
 | `EXPORTACION_MAX_FILAS` | Máximo de filas al exportar la lista de asistencias (por defecto, 5000); si el filtro da más, la API responde `422`. |
-| `SIMULADOR_API_URL`, `SIMULADOR_DISPOSITIVO_ID`, `SIMULADOR_DISPOSITIVO_CLAVE` | Solo los usa `npm run simular:lectura`. `.env.example` trae el dispositivo y la clave de la semilla (**solo para desarrollo**). |
+| `SIMULADOR_API_URL`, `SIMULADOR_DISPOSITIVO_ID`, `SIMULADOR_DISPOSITIVO_CLAVE` | Solo los usan `npm run simular:lectura` y `npm run dispositivo:diagnostico`. `.env.example` trae el dispositivo y la clave de la semilla (**solo para desarrollo**). |
 
 Para generar un `JWT_SECRET`:
 
@@ -167,7 +167,15 @@ El servidor escucha en **todas las interfaces de red**: responde en `localhost` 
 
 ### Probar con el lector ESP32 real (solo desarrollo)
 
-[`docs/prueba-con-dispositivo.md`](docs/prueba-con-dispositivo.md) explica cómo conectar el ESP32 a la API de una computadora del equipo: dirección IP, firewall, hotspot, colores esperados y límites. Dos herramientas ayudan, y las dos se niegan a correr con `NODE_ENV=production`:
+[`docs/prueba-con-dispositivo.md`](docs/prueba-con-dispositivo.md) explica cómo conectar el ESP32 a la API de una computadora del equipo: dirección IP, firewall, hotspot, colores esperados y límites. Empieza con una **lista de 10 minutos** para el día de la prueba.
+
+Para revisar la conexión antes de tocar el lector:
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dispositivo:diagnostico [-- <uid>] [--real] [--url <dirección>] [--id <id>]` | Hace la petición del ESP32 con los datos que irán en `firmware/secretos.h` y dice en lenguaje claro qué falla: la configuración, la red (rechazo, sin respuesta en 3 s, nombre inexistente), la ruta, la clave, el dispositivo inactivo, el límite de solicitudes, el formato del UID, la credencial o la clase. **Por defecto no registra nada:** envía la petición sin UID y la API, que revisa la clave antes que el cuerpo, responde `400`; con un UID, además revisa su formato sin enviarlo. **Con `--real`** envía la petición completa con el UID (sí registra) y dice qué señal mostraría el lector. La dirección, el id y la clave salen de `SIMULADOR_*` del `.env`; la clave nunca se pasa por la línea de comandos ni se muestra, y el UID sale enmascarado |
+
+Y dos herramientas para preparar la base, que se niegan a correr con `NODE_ENV=production`:
 
 | Comando | Qué hace |
 |---|---|
@@ -227,7 +235,7 @@ El repositorio es público: una contraseña que se sube queda en el historial au
 - **Si el check falla:** quita el secreto del código y, sobre todo, **cámbialo** (la contraseña, la clave o la implementación del script), porque ya quedó en el historial de la rama.
 - **Para probarlo en tu computadora,** con gitleaks instalado: `gitleaks git --config .gitleaks.toml --redact -v --log-opts="HEAD" .`
 
-La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 206 pruebas en diez archivos:
+La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). La API tiene 240 pruebas en once archivos:
 
 | Archivo | Pruebas | Qué cubre |
 |---|---|---|
@@ -240,6 +248,7 @@ La web tiene sus propias pruebas (ver [Pruebas de la web](#pruebas-de-la-web)). 
 | `tests/orden.test.ts` | 10 | Orden alfabético en español de todas las listas (P2, P3, P4, P5, XLSX y PDF) con la base en configuración «C»: acentos, «ñ», minúsculas y empates en «más faltas». |
 | `tests/faltas.test.ts` | 15 | Faltas y pendientes con el reloj fijo antes, durante y después de la ventana de registro, con los mismos totales en P2, P3 y las exportaciones; y la búsqueda de estudiante de P2. |
 | `tests/desarrollo.test.ts` | 13 | Herramientas de prueba con el dispositivo: clase de prueba con el reloj fijo y lecturas reales por la API, repetición, choque con otra clase, vinculación con avisos, reemplazo y conflicto, negativa en producción, y que un solo lector que prueba seguido no se bloquea. |
+| `tests/diagnostico.test.ts` | 34 | `npm run dispositivo:diagnostico` contra la API levantada en un puerto real: que el modo normal no registra nada aunque la lectura contaría, clave e id equivocados, dispositivo inactivo, ruta equivocada, `localhost` con la IP sugerida, modo real (verde, duplicado, sin clase, credencial no vinculada, UID inválido sin enviar), conexión rechazada, servidor que no contesta, `429`, `500`, configuración inválida sin enviar nada, RNF-06 (ni el UID completo ni la clave en el resultado) y la tabla de señales. |
 | `tests/uid.test.ts` | 24 | Formato canónico del UID: lo que `esquemaUid` acepta (4, 7 y 10 bytes con mayúsculas, minúsculas, espacios y dos puntos) y lo que rechaza (decimal, ceros perdidos, truncado), y el análisis de `npm run uid:revisar`. |
 
 En las pruebas, `vitest.config.ts` cambia dos valores:
@@ -1107,7 +1116,7 @@ El registro usa `INSERT ... ON CONFLICT (id_estudiante, id_clase, fecha) DO NOTH
 
 ## Cambios al modelo de datos
 
-Cambios respecto al modelo entidad-relación entregado. **El equipo debe actualizar el diagrama entidad-relación** con los dos cambios de abajo para que coincida con la base.
+Cambios respecto al modelo entidad-relación entregado. **El equipo debe actualizar el diagrama entidad-relación** con los tres cambios de abajo para que coincida con la base. [`docs/cambios-al-modelo.md`](docs/cambios-al-modelo.md) los explica para el documento de modelado y trae el diagrama completo en Mermaid, generado a partir de las migraciones.
 
 ### Qué cambiar en el diagrama
 
@@ -1140,11 +1149,15 @@ db/
   preparar-base.ts           crea la BD, aplica migraciones y semilla
 docs/contrato-dispositivo.md contrato de la API para el firmware del ESP32
 docs/guia-firmware.md        guía del firmware: capa del lector, conexiones y pruebas
-docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo
+docs/prueba-con-dispositivo.md  probar el ESP32 real contra la API de una computadora del equipo (con la lista de 10 minutos)
+docs/revision-firmware.md    qué le falta a la versión inicial del firmware para hablar con la API
+docs/cambios-al-modelo.md    los tres cambios al modelo entidad-relación, con el diagrama actualizado
+docs/decisiones-pendientes.md  UC-02, recuperación de contraseña y aviso de privacidad: opciones y costo
 .gitleaks.toml               reglas de la revisión de secretos del CI
 scripts/
   db-setup.ts                npm run db:setup
   dispositivo-clave.ts       npm run dispositivo:clave
+  dispositivo-diagnostico.ts npm run dispositivo:diagnostico
   simular-lectura.ts         npm run simular:lectura
   uid-revisar.ts             npm run uid:revisar
   dev-clase-ahora.ts         npm run dev:clase-ahora (solo desarrollo)
@@ -1192,11 +1205,11 @@ Cada módulo nuevo va en `src/modules/<nombre>/` con la misma forma y se monta e
 
 ## Pendientes
 
-- **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador.
-- **Recuperación de contraseña:** no existe. El boceto de P1 tiene «¿Olvidaste tu contraseña?», y la web solo pide contactar al administrador. Hacerla de verdad necesita envío de correos y un token de un solo uso; mientras tanto, un administrador tendría que cambiar la contraseña directamente en la base.
-- **Aviso de privacidad:** la página `/aviso-de-privacidad` es un borrador marcado como tal. El texto definitivo (LFPDPPP) lo redacta el equipo.
+- **Acceso de estudiantes (UC-02): pendiente de definir.** El diagrama de casos de uso muestra un inicio de sesión para estudiantes, pero el modelo entidad-relación y los diagramas de actividades solo contemplan los roles Docente y Administrador, y la tabla `estudiante` no tiene contraseña. Por ahora solo hay login para Docente y Administrador. Opciones y costo en [`docs/decisiones-pendientes.md`](docs/decisiones-pendientes.md).
+- **Recuperación de contraseña:** no existe. El boceto de P1 tiene «¿Olvidaste tu contraseña?», y la web solo pide contactar al administrador, que hoy solo puede cambiarla directamente en la base. Opciones (el administrador desde la web, o un enlace por correo) en [`docs/decisiones-pendientes.md`](docs/decisiones-pendientes.md).
+- **Aviso de privacidad:** la página `/aviso-de-privacidad` es un borrador marcado como tal. El texto definitivo lo redacta el equipo. [`docs/decisiones-pendientes.md`](docs/decisiones-pendientes.md) lista lo que le falta y la duda de qué ley aplica (el enlace cita la LFPDPPP, que es para particulares).
 - **Web:** faltan las entregas 4 y 5 (ver [Página web](#página-web)).
-- El firmware del ESP32 lo programa el equipo en `firmware/`.
+- El firmware del ESP32 lo programa el equipo en `firmware/`. Lo que le falta para hablar con la API está en [`docs/revision-firmware.md`](docs/revision-firmware.md).
 - **Estadísticas, siguientes pasos:**
   - Una tabla `dia_inhabil` opcional, si la escuela quiere contar como faltas los días en que todo el grupo faltó.
   - Exportar en segundo plano si alguna vez hace falta superar `EXPORTACION_MAX_FILAS`.
